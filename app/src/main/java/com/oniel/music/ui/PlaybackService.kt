@@ -11,7 +11,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import com.oniel.music.net.NetClients
+import com.oniel.music.net.Tailscale
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.audio.AudioSink
@@ -35,7 +37,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  * 1. Auth on audio requests. Jellyfin 12.2.0's universal stream endpoint
  *    needs the `Authorization: MediaBrowser Token="..."` header. Both
- *    players share one [DefaultHttpDataSource.Factory] that carries it.
+ *    players share one [OkHttpDataSource.Factory] that carries it (built on
+ *    NetClients.http, so built-in Tailscale routing applies to streams).
  *
  * 2. Crossfade — two players that take turns (v1.0.3 rewrite).
  *
@@ -101,7 +104,7 @@ class PlaybackService : MediaSessionService() {
     private val meters = HashMap<ExoPlayer, LevelMeter>()
 
     /** Shared by both players: every audio request carries the header. */
-    private var httpFactory: DefaultHttpDataSource.Factory? = null
+    private var httpFactory: OkHttpDataSource.Factory? = null
 
     private var crossfadeSeconds: Int = Crossfade.DEFAULT_SECONDS
 
@@ -212,8 +215,11 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val factory = DefaultHttpDataSource.Factory()
-            .setAllowCrossProtocolRedirects(true)
+        // Start built-in Tailscale (if on) before any stream is opened.
+        Tailscale.startIfEnabled(this)
+        // Streams go through the app's shared OkHttp client, so tailnet
+        // hosts use built-in Tailscale like every other request.
+        val factory = OkHttpDataSource.Factory(NetClients.http)
         httpFactory = factory
         // Read the saved login and crossfade length now, so the first
         // track already carries the auth header and the saved overlap.
@@ -253,7 +259,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun buildPlayer(): ExoPlayer {
-        val factory = httpFactory ?: DefaultHttpDataSource.Factory()
+        val factory = httpFactory ?: OkHttpDataSource.Factory(NetClients.http)
         val meter = LevelMeter()
         // Same audio sink as ExoPlayer's default, plus the level meter.
         val renderersFactory = object : DefaultRenderersFactory(this) {

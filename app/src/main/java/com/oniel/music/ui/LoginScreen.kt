@@ -184,6 +184,9 @@ fun LoginScreen(
             Text(stringResource(R.string.login_button))
         }
 
+        Spacer(modifier = Modifier.height(24.dp))
+        TailscaleCard()
+
         Spacer(modifier = Modifier.height(16.dp))
         Text(
             text = stringResource(R.string.login_note),

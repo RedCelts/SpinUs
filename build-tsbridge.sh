@@ -4,9 +4,10 @@
 # The CI workflow runs the same steps before the Gradle build.
 set -euo pipefail
 cd "$(dirname "$0")/tsbridge"
-go get tailscale.com@latest golang.org/x/mobile@latest
+# Pinned: bump deliberately.
+go get tailscale.com@v1.104.7 golang.org/x/mobile@v0.0.0-20261117202452-47699113848a
 go mod tidy
-go install golang.org/x/mobile/cmd/gomobile@latest golang.org/x/mobile/cmd/gobind@latest
+go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
 export PATH="$(go env GOPATH)/bin:$PATH"
 gomobile init
 mkdir -p ../app/libs

@@ -11,12 +11,22 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import coil.Coil
+import coil.ImageLoader
+import com.oniel.music.net.NetClients
+import com.oniel.music.net.Tailscale
 import com.oniel.music.ui.OnielMusicApp
 import com.oniel.music.ui.theme.OnielMusicTheme
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Built-in Tailscale (if the user turned it on), and one HTTP
+        // client for images too, so artwork also loads over the tailnet.
+        Tailscale.startIfEnabled(this)
+        Coil.setImageLoader(
+            ImageLoader.Builder(this).okHttpClient(NetClients.http).build()
+        )
         try {
             setContent {
                 OnielMusicTheme {

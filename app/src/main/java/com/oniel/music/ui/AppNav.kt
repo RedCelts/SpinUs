@@ -64,7 +64,7 @@ private object Routes {
 fun OnielMusicApp() {
     val context = LocalContext.current
     val authStore = remember { AuthStore(context) }
-    val client = remember { JellyfinClient() }
+    val client = remember { JellyfinClient(http = com.oniel.music.net.NetClients.http) }
     val player: PlayerController = viewModel()
 
     var auth by remember { mutableStateOf<SavedAuth?>(null) }

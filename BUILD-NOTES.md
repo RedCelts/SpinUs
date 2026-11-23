@@ -496,3 +496,19 @@ the v1.2 script.)
   min 1 s. Unit tests: 53 crossfade checks pass (JVM, Kotlin 2.0.21).
 - Not covered: tempo/beat matching (would need on-device BPM + beat-grid
   analysis and time-stretch).
+
+## v1.0.5 — built-in Tailscale (2026-11-22)
+- `tsbridge/` (Go): embeds tsnet (tailscale.com v1.104.7) as its own
+  tailnet device "oniel-music" (userspace networking — no VPN, works
+  alongside the Tailscale app), plus a local SOCKS5 proxy on 127.0.0.1.
+  Built to app/libs/tsbridge.aar by build-tsbridge.sh (gomobile, arm64 +
+  armv7, API 26); CI runs it before Gradle. State lives in filesDir/tailscale.
+  Android 11+ blocks Go's net.Interfaces(), so Kotlin supplies interfaces
+  via netmon.RegisterInterfaceGetter. Diagnostic log upload is turned off.
+- `net/Tailscale.kt`: start/stop (remembered switch), status polling,
+  sign-in URL (opened in the browser), sign-out.
+- `net/NetClients.kt`: ONE OkHttp client for API, presence socket, Coil
+  images and ExoPlayer (now media3-datasource-okhttp). Its ProxySelector
+  sends only tailnet hosts (100.64.0.0/10, fd7a:115c:a1e0::, *.ts.net,
+  MagicDNS short names) through the SOCKS proxy; LAN/internet go direct.
+- UI: Tailscale card in Settings and on the login screen.

@@ -18,7 +18,7 @@
     <string name="login_username_label">Username</string>
     <string name="login_password_label">Password</string>
     <string name="login_button">Sign in</string>
-    <string name="login_note">On your home network use http://&lt;server-IP&gt;:8096. Away from home, use your Tailscale https address instead.</string>
+    <string name="login_note">On your home network use http://&lt;server-IP&gt;:8096. Away from home, turn on built-in Tailscale below and use your server\'s Tailscale address.</string>
 
     <!-- Home -->
     <string name="home_title">Home</string>
@@ -44,6 +44,18 @@
     <string name="shuffle">Shuffle</string>
     <string name="show_more">More</string>
     <string name="show_less">Less</string>
+
+    <!-- Built-in Tailscale -->
+    <string name="ts_title">Tailscale (built-in)</string>
+    <string name="ts_subtitle">Reach your server away from home without the Tailscale app.</string>
+    <string name="ts_starting">Connecting…</string>
+    <string name="ts_needs_login">Not signed in to Tailscale</string>
+    <string name="ts_connected">Connected to your tailnet</string>
+    <string name="ts_error">Tailscale couldn\'t start</string>
+    <string name="ts_sign_in">Sign in to Tailscale</string>
+    <string name="ts_sign_out">Sign out of Tailscale</string>
+    <string name="ts_retry">Try again</string>
+    <string name="ts_address_hint">Use your server\'s Tailscale address (100.x.x.x, its MagicDNS name, or its .ts.net address). It works at home too.</string>
 
     <!-- Artist -->
     <string name="about">About</string>

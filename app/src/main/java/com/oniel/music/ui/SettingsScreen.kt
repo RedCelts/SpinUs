@@ -1,5 +1,7 @@
 package com.oniel.music.ui
 
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -59,6 +61,7 @@ fun SettingsScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
         Text(
@@ -124,6 +127,9 @@ fun SettingsScreen(
         )
         Spacer(modifier = Modifier.height(24.dp))
 
+        TailscaleCard()
+        Spacer(modifier = Modifier.height(24.dp))
+
         Button(
             onClick = { showServerDialog = true },
             colors = ButtonDefaults.buttonColors(
@@ -154,7 +160,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.0.4"),
+            text = stringResource(R.string.settings_version, "1.0.5"),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
