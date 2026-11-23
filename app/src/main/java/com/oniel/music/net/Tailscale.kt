@@ -108,6 +108,7 @@ object Tailscale {
         scope.launch {
             try {
                 marker.writeText(System.currentTimeMillis().toString())
+                prepareEnvironment(dir)
                 try {
                     tsbridge.Tsbridge.setCrashFile(com.oniel.music.CrashLog.goCrashFile(app).absolutePath)
                 } catch (e: Throwable) {
@@ -137,6 +138,32 @@ object Tailscale {
         _state.value = State(phase = Phase.OFF)
         scope.launch {
             try { tsbridge.Tsbridge.stop() } catch (e: Throwable) { Log.w(TAG, "stop failed", e) }
+        }
+    }
+
+    /**
+     * Android apps have no $HOME or XDG folders, and Tailscale's Go code
+     * panics without a place for its log state. Set them (and opt out of
+     * diagnostic log upload) BEFORE the Go library loads: Go reads the
+     * environment once, when it starts.
+     */
+    private fun prepareEnvironment(dir: String) {
+        val logs = File(dir, "logs").apply { mkdirs() }
+        val cache = File(dir, "cache").apply { mkdirs() }
+        val vars = mapOf(
+            "HOME" to dir,
+            "XDG_CACHE_HOME" to cache.absolutePath,
+            "XDG_CONFIG_HOME" to dir,
+            "TMPDIR" to cache.absolutePath,
+            "TS_LOGS_DIR" to logs.absolutePath,
+            "TS_NO_LOGS_NO_SUPPORT" to "true"
+        )
+        for ((key, value) in vars) {
+            try {
+                android.system.Os.setenv(key, value, true)
+            } catch (e: Exception) {
+                Log.w(TAG, "setenv $key failed", e)
+            }
         }
     }
 

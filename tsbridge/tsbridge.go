@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -76,12 +77,31 @@ func Start(dir, hostname string, ctx AppContext) error {
 		netmon.RegisterInterfaceGetter(getInterfaces)
 		getterSet = true
 	}
-	// Don't upload diagnostic logs to Tailscale.
-	os.Setenv("TS_NO_LOGS_NO_SUPPORT", "true")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		lastErr = err.Error()
 		return err
 	}
+	// Android apps have no $HOME / XDG folders. Without them Tailscale's
+	// log policy panics ("no safe place found to store log state") —
+	// the v1.0.5 crash. Point everything at the app's private folder.
+	// (Kotlin sets the same variables before the library loads.)
+	logsDir := filepath.Join(dir, "logs")
+	cacheDir := filepath.Join(dir, "cache")
+	for _, d := range []string{logsDir, cacheDir} {
+		os.MkdirAll(d, 0o700)
+	}
+	setIfEmpty := func(k, v string) {
+		if os.Getenv(k) == "" {
+			os.Setenv(k, v)
+		}
+	}
+	setIfEmpty("HOME", dir)
+	setIfEmpty("XDG_CACHE_HOME", cacheDir)
+	setIfEmpty("XDG_CONFIG_HOME", dir)
+	setIfEmpty("TMPDIR", cacheDir)
+	setIfEmpty("TS_LOGS_DIR", logsDir)
+	// Don't upload diagnostic logs to Tailscale.
+	os.Setenv("TS_NO_LOGS_NO_SUPPORT", "true")
 	s := &tsnet.Server{
 		Dir:      dir,
 		Hostname: hostname,

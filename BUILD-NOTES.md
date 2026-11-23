@@ -524,3 +524,13 @@ the v1.2 script.)
   app: Tailscale is switched off automatically so the app opens.
 - ci/emulator-smoke.sh + emulator-smoke.yml (diag/** branches): the
   emulator never booted on the hosted runner (two tries) — parked.
+
+## v1.0.7 — fix built-in Tailscale crash (2026-11-23)
+- Crash report from the phone (Galaxy Z Fold, Android 17 / API 37):
+  `panic: no safe place found to store log state` — Tailscale's
+  logpolicy.LogsDir() found no $HOME / XDG cache dir (Android apps have
+  none) and panicked.
+- Fix: before the Go library loads, Kotlin sets HOME, XDG_CACHE_HOME,
+  XDG_CONFIG_HOME, TMPDIR, TS_LOGS_DIR (all under filesDir/tailscale) and
+  TS_NO_LOGS_NO_SUPPORT=true via android.system.Os.setenv; Go sets them
+  again in Start() if empty.
