@@ -215,6 +215,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        com.oniel.music.CrashLog.install(this)
         // Start built-in Tailscale (if on) before any stream is opened.
         Tailscale.startIfEnabled(this)
         // Streams go through the app's shared OkHttp client, so tailnet

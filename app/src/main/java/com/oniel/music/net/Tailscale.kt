@@ -42,6 +42,10 @@ object Tailscale {
     private const val TAG = "OnielTailscale"
     private const val PREFS = "tailscale"
     private const val KEY_ENABLED = "enabled"
+    /** Exists while Tailscale is starting; left behind if starting killed the app. */
+    private const val STARTING_MARKER = "tailscale_starting"
+    /** How long after a successful start the marker is kept (late crashes count too). */
+    private const val MARKER_HOLD_MS = 20_000L
     const val HOSTNAME = "oniel-music"
 
     private val _state = MutableStateFlow(State())
@@ -71,6 +75,20 @@ object Tailscale {
     /** Start if the user turned Tailscale on. Safe to call repeatedly. */
     fun startIfEnabled(context: Context) {
         appContext = context.applicationContext
+        val marker = File(context.applicationContext.filesDir, STARTING_MARKER)
+        if (!started && marker.exists()) {
+            // The last start never finished: it took the app down. Turn
+            // Tailscale off so the app opens normally; the crash report
+            // (if any) is shown on launch.
+            marker.delete()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(KEY_ENABLED, false).apply()
+            _state.value = State(
+                phase = Phase.OFF,
+                error = "Tailscale closed the app while starting, so it was turned off."
+            )
+            return
+        }
         if (isEnabled(context)) start(context)
     }
 
@@ -83,20 +101,31 @@ object Tailscale {
     private fun start(context: Context) {
         if (started) return
         started = true
-        val dir = File(context.applicationContext.filesDir, "tailscale").absolutePath
+        val app = context.applicationContext
+        val dir = File(app.filesDir, "tailscale").absolutePath
+        val marker = File(app.filesDir, STARTING_MARKER)
         _state.value = State(phase = Phase.STARTING)
         scope.launch {
             try {
+                marker.writeText(System.currentTimeMillis().toString())
+                try {
+                    tsbridge.Tsbridge.setCrashFile(com.oniel.music.CrashLog.goCrashFile(app).absolutePath)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "crash file not set", e)
+                }
                 tsbridge.Tsbridge.start(dir, HOSTNAME, bridgeContext)
                 socksPort = tsbridge.Tsbridge.socksPort().toInt()
             } catch (e: Throwable) {
                 Log.w(TAG, "start failed", e)
+                marker.delete()
                 started = false
                 socksPort = 0
                 _state.value = State(phase = Phase.ERROR, error = e.message ?: e.javaClass.simpleName)
                 return@launch
             }
             startPolling()
+            delay(MARKER_HOLD_MS)
+            marker.delete()
         }
     }
 

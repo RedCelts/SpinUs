@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -48,6 +49,17 @@ var (
 	lastErr   string
 	getterSet bool
 )
+
+// SetCrashFile makes a Go crash (panic / fatal error) write its report
+// to path, so the app can show it on the next launch. Android's crash
+// dialog alone says nothing about what went wrong.
+func SetCrashFile(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	return debug.SetCrashOutput(f, debug.CrashOptions{})
+}
 
 // Start brings the embedded Tailscale node up. dir is a private,
 // persistent folder (the node's identity and keys live there), hostname

@@ -21,6 +21,14 @@ import com.oniel.music.ui.theme.OnielMusicTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
+        // Debug builds: `am start ... --ez ts_enable true` turns built-in
+        // Tailscale on (used by the CI emulator smoke test).
+        if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&
+            intent?.getBooleanExtra("ts_enable", false) == true
+        ) {
+            Tailscale.setEnabled(this, true)
+        }
         // Built-in Tailscale (if the user turned it on), and one HTTP
         // client for images too, so artwork also loads over the tailnet.
         Tailscale.startIfEnabled(this)
@@ -35,6 +43,7 @@ class MainActivity : ComponentActivity() {
                         color = MaterialTheme.colorScheme.background
                     ) {
                         OnielMusicApp()
+                        com.oniel.music.ui.CrashReportDialog()
                     }
                 }
             }

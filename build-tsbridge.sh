@@ -11,6 +11,6 @@ go install golang.org/x/mobile/cmd/gomobile golang.org/x/mobile/cmd/gobind
 export PATH="$(go env GOPATH)/bin:$PATH"
 gomobile init
 mkdir -p ../app/libs
-gomobile bind -target=android/arm64 -androidapi 26 \
+gomobile bind -target="${TSBRIDGE_TARGETS:-android/arm64}" -androidapi 26 \
   -ldflags="-s -w" -o ../app/libs/tsbridge.aar .
 ls -la ../app/libs/tsbridge.aar
