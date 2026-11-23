@@ -44,7 +44,7 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.0.3"
+        const val CLIENT_VERSION = "1.0.4"
         /**
          * Containers sent as-is (no transcode) by [audioUrl]: all play in
          * ExoPlayer on Android 8+. "m4a%7Caac" is Jellyfin's container|codec

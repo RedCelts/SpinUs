@@ -1,5 +1,6 @@
 package com.oniel.music.ui
 
+import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -9,8 +10,12 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -58,7 +63,15 @@ import kotlinx.coroutines.withTimeoutOrNull
  *    The user skipping, seeking or pausing during the fade cancels it: the
  *    spare stops and the active player goes back to full volume. Repeat-one
  *    never crossfades (it would fade a song into itself).
+ *
+ * 3. Smart crossfade (v1.0.4). Each player has a [LevelMeter] in its audio
+ *    chain. In the last 15 s of a track, if the outgoing audio goes quiet
+ *    (fade-out / trailing silence) the overlap starts right away instead
+ *    of waiting for the timer. The incoming player skips leading silence
+ *    for the length of the fade. The fade curve is equal-power. Two
+ *    consecutive tracks from the same album are never crossfaded.
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
 
     companion object {
@@ -72,6 +85,8 @@ class PlaybackService : MediaSessionService() {
 
         /** MediaMetadata extras key: track length from Jellyfin, in ms. */
         const val EXTRA_RUNTIME_MS = "runtime_ms"
+        /** MediaMetadata extras key: the track's album id (same album = no crossfade). */
+        const val EXTRA_ALBUM_ID = "album_id"
 
         private const val CHECK_INTERVAL_MS = 200L
         private const val RAMP_TICK_MS = 50L
@@ -82,6 +97,8 @@ class PlaybackService : MediaSessionService() {
     /** The other player: idle, or fading in the next track. */
     private var spare: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
+    /** Each player's level meter (smart crossfade). */
+    private val meters = HashMap<ExoPlayer, LevelMeter>()
 
     /** Shared by both players: every audio request carries the header. */
     private var httpFactory: DefaultHttpDataSource.Factory? = null
@@ -128,6 +145,10 @@ class PlaybackService : MediaSessionService() {
     /** Attached to whichever player is active. */
     private val activeListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // A new track on the active player: its loudness starts over.
+            // (During a fade the active player is the outgoing one, whose
+            // meter no longer matters.)
+            if (!fading) player?.let { meters[it]?.requestTrackReset() }
             if (!fading) return
             if (fadeOut != null && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
                 // The outgoing track ended a little before our estimate:
@@ -233,17 +254,32 @@ class PlaybackService : MediaSessionService() {
 
     private fun buildPlayer(): ExoPlayer {
         val factory = httpFactory ?: DefaultHttpDataSource.Factory()
+        val meter = LevelMeter()
+        // Same audio sink as ExoPlayer's default, plus the level meter.
+        val renderersFactory = object : DefaultRenderersFactory(this) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): AudioSink = DefaultAudioSink.Builder(context)
+                .setEnableFloatOutput(enableFloatOutput)
+                .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                .setAudioProcessors(arrayOf(meter))
+                .build()
+        }
         val attributes = AudioAttributes.Builder()
             .setUsage(C.USAGE_MEDIA)
             .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
             .build()
         // Neither player takes audio focus: if the incoming player took it,
         // Android would tell the outgoing one to pause mid-fade.
-        return ExoPlayer.Builder(this)
+        val built = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(DefaultMediaSourceFactory(factory))
             .setAudioAttributes(attributes, false)
             .setHandleAudioBecomingNoisy(true)
             .build()
+        meters[built] = meter
+        return built
     }
 
     override fun onGetSession(
@@ -259,6 +295,7 @@ class PlaybackService : MediaSessionService() {
         spare?.release()
         player = null
         spare = null
+        meters.clear()
         super.onDestroy()
     }
 
@@ -271,6 +308,9 @@ class PlaybackService : MediaSessionService() {
         return Crossfade.effectiveDurationMs(p.duration, fromMetadata)
     }
 
+    private fun albumIdOf(item: MediaItem?): String? =
+        item?.mediaMetadata?.extras?.getString(EXTRA_ALBUM_ID)
+
     private fun maybeStartCrossfade() {
         val main = player ?: return
         if (fading || !main.isPlaying) return
@@ -278,11 +318,22 @@ class PlaybackService : MediaSessionService() {
         if (main.repeatMode == Player.REPEAT_MODE_ONE) return
         val nextIndex = main.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET) return
+        // Same album: play straight through (gapless), no fade.
+        val nextItem = try { main.getMediaItemAt(nextIndex) } catch (e: Exception) { return }
+        if (Crossfade.sameAlbum(albumIdOf(main.currentMediaItem), albumIdOf(nextItem))) return
         val duration = durationOf(main)
         // Never fade longer than half the track (short tracks, intros).
         val crossfadeMs = minOf(crossfadeSeconds * 1000L, duration / 2)
-        if (!Crossfade.shouldStart(main.currentPosition, duration, crossfadeMs, true)) return
-        startCrossfade(main, nextIndex, crossfadeMs)
+        val position = main.currentPosition
+        val timed = Crossfade.shouldStart(position, duration, crossfadeMs, true)
+        val meter = meters[main]
+        val quietTail = meter != null && Crossfade.shouldStartOnQuietTail(
+            position, duration, meter.quietForMs, true, meter.loudnessKnown
+        )
+        if (!timed && !quietTail) return
+        val fadeMs = Crossfade.fadeLengthMs(crossfadeMs, position, duration)
+        if (fadeMs <= 0L) return
+        startCrossfade(main, nextIndex, fadeMs)
     }
 
     private fun startCrossfade(main: ExoPlayer, nextIndex: Int, crossfadeMs: Long) {
@@ -295,6 +346,10 @@ class PlaybackService : MediaSessionService() {
         fadeTotalMs = crossfadeMs
         fadeStartMs = SystemClock.uptimeMillis()
         incoming.volume = 0f
+        meters[incoming]?.requestTrackReset()
+        // Skip the incoming track's leading silence while it fades in
+        // (switched off again when the fade ends).
+        incoming.skipSilenceEnabled = true
         incoming.repeatMode = main.repeatMode
         incoming.setMediaItems(items, nextIndex, 0L)
         incoming.shuffleModeEnabled = main.shuffleModeEnabled
@@ -330,6 +385,7 @@ class PlaybackService : MediaSessionService() {
         fading = false
         handler.removeCallbacks(rampRunnable)
         fadeIn?.volume = 1f
+        fadeIn?.skipSilenceEnabled = false
         fadeOut = null
         fadeIn = null
     }
@@ -344,10 +400,12 @@ class PlaybackService : MediaSessionService() {
             spare?.stop()
             spare?.clearMediaItems()
             spare?.volume = 1f
+            spare?.skipSilenceEnabled = false
             outgoing.volume = 1f
         } else {
             // After the swap: just finish the fade-in at full volume.
             player?.volume = 1f
+            player?.skipSilenceEnabled = false
         }
         fading = false
         fadeOut = null

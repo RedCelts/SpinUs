@@ -339,13 +339,13 @@ private fun testCrossfade() {
     // Short track: a 2s track with a 3s crossfade still overlaps from 0.
     check("crossfade starts at 0 on a track shorter than N", Crossfade.shouldStart(0, 2_000, 3_000, true))
 
-    // Volume ramp over 3000ms: outgoing 1 -> 0, incoming 0 -> 1, linear.
+    // Volume ramp over 3000ms: outgoing 1 -> 0, incoming 0 -> 1, equal-power.
     val (out0, in0) = Crossfade.volumes(0, 3_000)
     checkNear("ramp start out=1", 1.0, out0.toDouble())
     checkNear("ramp start in=0", 0.0, in0.toDouble())
     val (outMid, inMid) = Crossfade.volumes(1_500, 3_000)
-    checkNear("ramp middle out=0.5", 0.5, outMid.toDouble())
-    checkNear("ramp middle in=0.5", 0.5, inMid.toDouble())
+    checkNear("ramp middle out=0.7071", 0.70710678, outMid.toDouble(), 1e-6)
+    checkNear("ramp middle in=0.7071", 0.70710678, inMid.toDouble(), 1e-6)
     val (outEnd, inEnd) = Crossfade.volumes(3_000, 3_000)
     checkNear("ramp end out=0", 0.0, outEnd.toDouble())
     checkNear("ramp end in=1", 1.0, inEnd.toDouble())
@@ -353,9 +353,44 @@ private fun testCrossfade() {
     val (outLate, inLate) = Crossfade.volumes(9_999, 3_000)
     checkNear("ramp late out stays 0", 0.0, outLate.toDouble())
     checkNear("ramp late in stays 1", 1.0, inLate.toDouble())
-    // Volumes always sum to 1 mid-ramp (no dip or spike in loudness).
-    val (o, i) = Crossfade.volumes(750, 3_000)
-    checkNear("ramp volumes sum to 1", 1.0, (o + i).toDouble())
+    // Equal power: out^2 + in^2 = 1 everywhere (no loudness dip mid-fade).
+    for (ms in listOf(1L, 400L, 750L, 1_500L, 2_250L, 2_999L)) {
+        val (o, i) = Crossfade.volumes(ms, 3_000)
+        checkNear("ramp power is 1 at ${ms}ms", 1.0, (o * o + i * i).toDouble(), 1e-6)
+    }
+    // Outgoing never rises, incoming never falls.
+    val steps = (0..30).map { Crossfade.volumes(it * 100L, 3_000) }
+    check("ramp out is non-increasing", steps.zipWithNext().all { (a, b) -> b.first <= a.first })
+    check("ramp in is non-decreasing", steps.zipWithNext().all { (a, b) -> b.second >= a.second })
+
+    // v1.0.4: quiet-tail early start (240s track).
+    check("quiet tail starts early inside last 15s",
+        Crossfade.shouldStartOnQuietTail(229_000, 240_000, 900, true, true))
+    check("quiet tail ignored before last 15s",
+        !Crossfade.shouldStartOnQuietTail(224_000, 240_000, 5_000, true, true))
+    check("quiet tail needs 800ms of quiet",
+        !Crossfade.shouldStartOnQuietTail(230_000, 240_000, 799, true, true))
+    check("quiet tail needs known loudness",
+        !Crossfade.shouldStartOnQuietTail(230_000, 240_000, 5_000, true, false))
+    check("quiet tail needs a next track",
+        !Crossfade.shouldStartOnQuietTail(230_000, 240_000, 5_000, false, true))
+    check("quiet tail never past the end",
+        !Crossfade.shouldStartOnQuietTail(240_000, 240_000, 5_000, true, true))
+    // Quiet = 20 dB under the track average, or under ~-50 dBFS.
+    check("quiet: 25 dB under average", Crossfade.isQuiet(0.01f, 0.2f))
+    check("not quiet: 6 dB under average", !Crossfade.isQuiet(0.1f, 0.2f))
+    check("quiet: near-silence on a soft track", Crossfade.isQuiet(0.002f, 0.015f))
+    check("not quiet: soft track at its normal level", !Crossfade.isQuiet(0.015f, 0.015f))
+    // Fade length.
+    checkEq("fade: full length when time allows", 5_000L, Crossfade.fadeLengthMs(5_000, 220_000, 240_000))
+    checkEq("fade: shortened to what is left", 2_000L, Crossfade.fadeLengthMs(5_000, 238_000, 240_000))
+    checkEq("fade: never under 1s", 1_000L, Crossfade.fadeLengthMs(5_000, 239_800, 240_000))
+    checkEq("fade: 0 when crossfade is off", 0L, Crossfade.fadeLengthMs(0, 230_000, 240_000))
+    // Same album plays straight through.
+    check("same album", Crossfade.sameAlbum("alb1", "alb1"))
+    check("different albums", !Crossfade.sameAlbum("alb1", "alb2"))
+    check("unknown album never counts as same", !Crossfade.sameAlbum(null, null))
+    check("empty album id never counts as same", !Crossfade.sameAlbum("", ""))
     // Zero-length crossfade is a no-op, never NaN.
     val (o0, i0) = Crossfade.volumes(0, 0)
     check("zero-length ramp is (1,1)", o0 == 1f && i0 == 1f)
@@ -378,7 +413,7 @@ private fun testAuthHeaderValue() {
     val header = client.authHeaderValue()
     check("auth header starts with MediaBrowser Token", header.startsWith("MediaBrowser Token=\"tok123\""))
     check("auth header names the client", header.contains("Client=\"Oniel Music\""))
-    check("auth header carries the version", header.contains("Version=\"1.0.3\""))
+    check("auth header carries the version", header.contains("Version=\"1.0.4\""))
     check("auth header has a device id", header.contains("DeviceId=\""))
     // The URL keeps api_key too (both together return 200).
     val url = client.audioUrl("track-9")

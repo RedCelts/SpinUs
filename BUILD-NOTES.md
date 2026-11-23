@@ -479,3 +479,20 @@ the v1.2 script.)
   backdrop URL). `manual-build/rest-test.py` still uses the old mp3-only
   URL in checks 29/47/48.
 - First real test is a Gradle build in Android Studio + listening on the phone.
+
+## v1.0.4 — smart crossfade (2026-11-22)
+- Equal-power curve (cos/sin): steady loudness through the overlap; the
+  old linear ramp dipped ~3 dB mid-fade.
+- `LevelMeter` (pass-through AudioProcessor in each player's
+  DefaultAudioSink) tracks short-term RMS (~300 ms) vs the track's average.
+  In the last 15 s of a track, 800 ms of "quiet" (20 dB under the track
+  average, or under ~-50 dBFS) starts the crossfade early, so fade-outs and
+  trailing silence don't leave a gap. Needs 10 s of the track heard first.
+- Incoming player runs with skipSilenceEnabled during the fade only (skips
+  its leading silence), switched off when the fade ends or is cancelled.
+- Consecutive tracks with the same album id (MediaItem extras `album_id`)
+  are never crossfaded: live albums / medleys play gapless.
+- Fade length = configured length, shortened to what's left of the track,
+  min 1 s. Unit tests: 53 crossfade checks pass (JVM, Kotlin 2.0.21).
+- Not covered: tempo/beat matching (would need on-device BPM + beat-grid
+  analysis and time-stretch).

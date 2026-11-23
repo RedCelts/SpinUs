@@ -71,7 +71,7 @@ for z in "$WORK"/compiled/*.zip; do LINK_ARGS+=(-R "$z"); done
   --manifest "$WORK/AndroidManifest.xml" \
   -I "$ANDROID_JAR" \
   --java "$WORK/gen" \
-  --version-code 4 --version-name 1.0.3 \
+  --version-code 5 --version-name 1.0.4 \
   --min-sdk-version 26 --target-sdk-version 34 \
   --auto-add-overlay \
   $EXTRA \

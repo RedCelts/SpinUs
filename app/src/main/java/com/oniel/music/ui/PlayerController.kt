@@ -451,6 +451,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         // crossfade even when a transcoded stream reports no length.
         val extras = Bundle().apply {
             putLong(PlaybackService.EXTRA_RUNTIME_MS, ticksToMs(runTimeTicks))
+            putString(PlaybackService.EXTRA_ALBUM_ID, albumId ?: "")
         }
         val metadata = MediaMetadata.Builder()
             .setTitle(title)
