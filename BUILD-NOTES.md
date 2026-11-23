@@ -512,3 +512,15 @@ the v1.2 script.)
   sends only tailnet hosts (100.64.0.0/10, fd7a:115c:a1e0::, *.ts.net,
   MagicDNS short names) through the SOCKS proxy; LAN/internet go direct.
 - UI: Tailscale card in Settings and on the login screen.
+
+## v1.0.6 — crash reports + Tailscale crash guard (2026-11-22)
+- v1.0.5 crashed on the phone right after turning built-in Tailscale on.
+  Cause not yet known (no log access). This build captures it:
+  `CrashLog` (Java uncaught handler -> files/crash/java.txt) and
+  `tsbridge.SetCrashFile` (Go runtime/debug.SetCrashOutput -> go.txt).
+  On the next launch a dialog shows the report with a Share button.
+- Crash-loop guard: a marker file exists while Tailscale starts (and for
+  20 s after). If it is still there at launch, the last start killed the
+  app: Tailscale is switched off automatically so the app opens.
+- ci/emulator-smoke.sh + emulator-smoke.yml (diag/** branches): the
+  emulator never booted on the hosted runner (two tries) — parked.
