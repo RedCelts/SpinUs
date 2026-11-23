@@ -5,3 +5,4 @@ local.properties
 .idea/
 *.iml
 manual-build/work/
+app/libs/*.aar

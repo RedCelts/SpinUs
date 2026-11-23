@@ -18,6 +18,15 @@ jobs:
           java-version: '17'
       # The ubuntu runner ships the Android SDK (ANDROID_HOME); AGP
       # downloads any missing platform itself.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: false
+      - name: Build embedded Tailscale (tsbridge.aar)
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          ./build-tsbridge.sh
+          (cd tsbridge && go list -m tailscale.com)
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
