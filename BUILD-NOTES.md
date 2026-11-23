@@ -501,8 +501,8 @@ the v1.2 script.)
 - `tsbridge/` (Go): embeds tsnet (tailscale.com v1.104.7) as its own
   tailnet device "oniel-music" (userspace networking — no VPN, works
   alongside the Tailscale app), plus a local SOCKS5 proxy on 127.0.0.1.
-  Built to app/libs/tsbridge.aar by build-tsbridge.sh (gomobile, arm64 +
-  armv7, API 26); CI runs it before Gradle. State lives in filesDir/tailscale.
+  Built to app/libs/tsbridge.aar by build-tsbridge.sh (gomobile, arm64 only,
+  API 26; .so stored compressed); CI runs it before Gradle. State lives in filesDir/tailscale.
   Android 11+ blocks Go's net.Interfaces(), so Kotlin supplies interfaces
   via netmon.RegisterInterfaceGetter. Diagnostic log upload is turned off.
 - `net/Tailscale.kt`: start/stop (remembered switch), status polling,

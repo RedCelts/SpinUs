@@ -18,6 +18,14 @@ android {
 
     // Sign with the same key as every APK already on the phone
     // (SHA-256 3AB0F198...), so new builds install over the old app.
+    // Store the embedded Tailscale library compressed (smaller download;
+    // Android unpacks it at install time).
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
     signingConfigs {
         debug {
             storeFile rootProject.file('keystore/debug.keystore')
