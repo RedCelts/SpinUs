@@ -52,6 +52,10 @@ fun SettingsScreen(
     authStore: AuthStore,
     crossfadeSeconds: Int,
     onCrossfadeChanged: (Int) -> Unit,
+    historySyncedAtMs: Long = 0L,
+    historySyncError: String? = null,
+    historySyncing: Boolean = false,
+    onSyncHistory: () -> Unit = {},
     onLoggedOut: (String?) -> Unit
 ) {
     var showServerDialog by remember { mutableStateOf(false) }
@@ -130,6 +134,14 @@ fun SettingsScreen(
         TailscaleCard()
         Spacer(modifier = Modifier.height(24.dp))
 
+        HistorySyncCard(
+            syncedAtMs = historySyncedAtMs,
+            error = historySyncError,
+            syncing = historySyncing,
+            onSyncNow = onSyncHistory
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+
         Button(
             onClick = { showServerDialog = true },
             colors = ButtonDefaults.buttonColors(
@@ -160,7 +172,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.0.7"),
+            text = stringResource(R.string.settings_version, "1.0.8"),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -255,4 +267,53 @@ private fun ChangeServerDialog(
             }
         }
     )
+}
+
+/** "Listening history is saved to your account" + last sync + Sync now. */
+@Composable
+private fun HistorySyncCard(
+    syncedAtMs: Long,
+    error: String?,
+    syncing: Boolean,
+    onSyncNow: () -> Unit
+) {
+    androidx.compose.material3.Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.history_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+            )
+            Text(
+                text = stringResource(R.string.history_subtitle),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            val status = when {
+                syncing -> stringResource(R.string.history_syncing)
+                error != null -> stringResource(R.string.history_error, error)
+                syncedAtMs > 0L -> stringResource(
+                    R.string.history_synced,
+                    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(syncedAtMs))
+                )
+                else -> stringResource(R.string.history_not_yet)
+            }
+            Text(
+                text = status,
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (error != null && !syncing) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurface
+            )
+            androidx.compose.material3.TextButton(
+                onClick = onSyncNow,
+                enabled = !syncing,
+                modifier = Modifier.padding(top = 4.dp)
+            ) { Text(stringResource(R.string.history_sync_now)) }
+        }
+    }
 }

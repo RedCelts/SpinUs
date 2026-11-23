@@ -14,8 +14,10 @@ import java.util.Locale
  * Entry shape (kept short on purpose): {"t":<epoch ms>,"id":"<track id>",
  * "n":"<title>","a":"<artist>","al":"<album>","d":<duration ms>}.
  *
- * - At most [MAX_ENTRIES] entries are kept (oldest dropped first).
- * - Entries older than [RETENTION_DAYS] days are pruned on every write.
+ * - At most [MAX_ENTRIES] entries are kept on the phone (oldest dropped first).
+ * - Entries older than [RETENTION_DAYS] days are pruned from the phone on
+ *   every write. The copy in the user's Jellyfin account (HistorySync)
+ *   is never pruned.
  * - A week is Monday–Sunday. Weeks are built from this log only — the
  *   server keeps no dated play history, so nothing older than the first
  *   logged play can ever appear here.
@@ -23,10 +25,15 @@ import java.util.Locale
 class PlayLog(private val dir: File) {
 
     companion object {
-        const val MAX_ENTRIES = 5000
-        const val RETENTION_DAYS = 84L
+        const val MAX_ENTRIES = 10_000
+        const val RETENTION_DAYS = 365L
         private const val FILE_NAME = "playlog.json"
         private const val DAY_MS = 86_400_000L
+
+        /** Same JSON as the on-device file; used for the account copy too. */
+        private val codec by lazy { PlayLog(File(".")) }
+        fun encodeJson(entries: List<Entry>): String = codec.toJson(entries)
+        fun decodeJson(text: String): List<Entry> = codec.parseEntries(text)
     }
 
     /** One logged play. */
@@ -58,6 +65,27 @@ class PlayLog(private val dir: File) {
         val trimmed = if (kept.size > MAX_ENTRIES) kept.takeLast(MAX_ENTRIES) else kept
         writeAll(trimmed)
     }
+
+    /**
+     * Merge plays from elsewhere (the user's account) into the phone's log.
+     * Duplicates (same time + track) are dropped; phone retention applies.
+     * Returns how many plays were new to the phone.
+     */
+    @Synchronized
+    fun mergeIn(other: List<Entry>, nowMs: Long = System.currentTimeMillis()): Int {
+        val local = readAll()
+        val merged = HistorySync.merge(local, other)
+        val cutoff = nowMs - RETENTION_DAYS * DAY_MS
+        val kept = merged.filter { it.timeMs >= cutoff }
+        val trimmed = if (kept.size > MAX_ENTRIES) kept.takeLast(MAX_ENTRIES) else kept
+        val added = trimmed.size - local.size
+        if (trimmed != local) writeAll(trimmed)
+        return added.coerceAtLeast(0)
+    }
+
+    /** Replace the phone's log (used when another account signs in on this phone). */
+    @Synchronized
+    fun replaceAll(entries: List<Entry>) = writeAll(HistorySync.merge(entries, emptyList()))
 
     /** All logged entries, oldest first. */
     @Synchronized
@@ -119,18 +147,20 @@ class PlayLog(private val dir: File) {
         try {
             dir.mkdirs()
             val tmp = File(dir, "$FILE_NAME.tmp")
-            tmp.writeText(buildString {
-                append('[')
-                entries.forEachIndexed { i, e ->
-                    if (i > 0) append(',')
-                    append("""{"t":${e.timeMs},"id":${jsonString(e.trackId)},"n":${jsonString(e.title)},"a":${jsonString(e.artist)},"al":${jsonString(e.album)},"d":${e.durationMs}}""")
-                }
-                append(']')
-            })
+            tmp.writeText(toJson(entries))
             tmp.renameTo(file)
         } catch (_: Exception) {
             // A failed write must never crash playback; the log is best-effort.
         }
+    }
+
+    internal fun toJson(entries: List<Entry>): String = buildString {
+        append('[')
+        entries.forEachIndexed { i, e ->
+            if (i > 0) append(',')
+            append("""{"t":${e.timeMs},"id":${jsonString(e.trackId)},"n":${jsonString(e.title)},"a":${jsonString(e.artist)},"al":${jsonString(e.album)},"d":${e.durationMs}}""")
+        }
+        append(']')
     }
 
     private fun jsonString(value: String): String {

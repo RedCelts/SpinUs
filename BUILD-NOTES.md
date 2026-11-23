@@ -534,3 +534,19 @@ the v1.2 script.)
   XDG_CONFIG_HOME, TMPDIR, TS_LOGS_DIR (all under filesDir/tailscale) and
   TS_NO_LOGS_NO_SUPPORT=true via android.system.Os.setenv; Go sets them
   again in Start() if empty.
+
+## v1.0.8 — listening history synced to the Jellyfin account (2026-11-23)
+- `HistorySync`: the PlayLog is stored in the user's Jellyfin account via
+  `/DisplayPreferences/onielmusic-history?userId=&client=onielmusic`
+  (CustomPrefs map), chunked into <=30,000-char JSON arrays under keys
+  `h1.0000`, `h1.0001`, ... Every sync is a union merge by
+  (time, track id): never overwrites, safe with several phones.
+  The account copy is never pruned.
+- When: on app start / sign-in, ~2 min after a play (batched), and
+  "Sync now" in Settings (shows last sync time or the error).
+- Phone retention raised: 365 days / 10,000 plays (was 84 days / 5,000).
+- The phone remembers which user its log belongs to; if a different user
+  signs in, the previous user's plays are not uploaded to them.
+- Endpoint not yet exercised against the user's server (Jellyfin 12.2.0);
+  a failure only shows "Couldn't sync" — the phone copy is unaffected.
+- JVM checks: 16 merge/chunk/mergeIn checks pass.

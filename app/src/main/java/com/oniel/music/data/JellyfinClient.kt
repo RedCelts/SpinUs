@@ -44,7 +44,7 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.0.7"
+        const val CLIENT_VERSION = "1.0.8"
         /**
          * Containers sent as-is (no transcode) by [audioUrl]: all play in
          * ExoPlayer on Android 8+. "m4a%7Caac" is Jellyfin's container|codec
@@ -470,6 +470,27 @@ class JellyfinClient(
             "/UserPlayedItems/$trackId?userId=$uid&datePlayed=$encoded"
         ).post("".toRequestBody(null)).build()
         executeRaw(request, "mark played")
+    }
+
+    // ---- Per-user app storage (listening-history sync) ----
+
+    /**
+     * This app's per-user storage on the server: Jellyfin "display
+     * preferences" for [prefsId] and [client]. Jellyfin returns a default
+     * (empty CustomPrefs) the first time. See HistorySync.
+     */
+    suspend fun getAppPrefs(prefsId: String, client: String): JSONObject {
+        val uid = requireUserId()
+        return getJson("/DisplayPreferences/$prefsId?userId=$uid&client=$client", "history (read)")
+    }
+
+    /** Save the whole display-preferences object back (CustomPrefs replaced as a set). */
+    suspend fun saveAppPrefs(prefsId: String, client: String, dto: JSONObject) {
+        val uid = requireUserId()
+        val request = authedRequest("/DisplayPreferences/$prefsId?userId=$uid&client=$client")
+            .post(dto.toString().toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+        executeRaw(request, "history (save)")
     }
 
     // ---- URLs for the player / image loader ----

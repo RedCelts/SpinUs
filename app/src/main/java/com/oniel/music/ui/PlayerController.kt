@@ -17,14 +17,20 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.oniel.music.data.Crossfade
+import com.oniel.music.data.HistorySync
 import com.oniel.music.data.JellyfinClient
 import com.oniel.music.data.LyricLine
 import com.oniel.music.data.PlayLog
 import com.oniel.music.data.SettingsStore
 import com.oniel.music.data.Track
 import com.oniel.music.data.WeekStats
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.Instant
 
@@ -45,6 +51,22 @@ class PlayerController(application: Application) : AndroidViewModel(application)
     private var pendingPlay: (() -> Unit)? = null
 
     private val playLog = PlayLog(File(application.filesDir, "playlog"))
+
+    // ---- Listening-history sync with the Jellyfin account ----
+
+    /** Last successful history sync (epoch ms), 0 = not yet this session. */
+    var historySyncedAtMs by mutableStateOf(0L)
+        private set
+    /** Last sync error, null when the last attempt worked. */
+    var historySyncError by mutableStateOf<String?>(null)
+        private set
+    var historySyncing by mutableStateOf(false)
+        private set
+    /** Bumped whenever plays arrive from the account, so Stats reloads. */
+    var historyVersion by mutableStateOf(0)
+        private set
+    private val historyMutex = Mutex()
+    private var pendingHistoryUpload: Job? = null
 
     /** The queue the user is playing through, and where we are in it. */
     var queue by mutableStateOf<List<Track>>(emptyList())
@@ -416,6 +438,59 @@ class PlayerController(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 // Best-effort.
             }
+            scheduleHistoryUpload()
+        }
+    }
+
+    /**
+     * Sync the listening history with the account now: plays on this
+     * phone go up, plays from other phones / earlier installs come down.
+     * Called on sign-in, on app start and from Settings.
+     */
+    fun syncHistoryNow() {
+        viewModelScope.launch { syncHistory() }
+    }
+
+    /** After a play: upload within 2 minutes (several songs share one upload). */
+    private fun scheduleHistoryUpload() {
+        if (pendingHistoryUpload?.isActive == true) return
+        pendingHistoryUpload = viewModelScope.launch {
+            delay(HISTORY_UPLOAD_DELAY_MS)
+            syncHistory()
+        }
+    }
+
+    private suspend fun syncHistory() {
+        val c = client ?: return
+        if (!c.isLoggedIn) return
+        historyMutex.withLock {
+            historySyncing = true
+            try {
+                val added = withContext(Dispatchers.IO) {
+                    // The phone's history belongs to one account. If a
+                    // different user signed in, don't upload the previous
+                    // user's plays into this account: start from theirs.
+                    val prefs = getApplication<Application>()
+                        .getSharedPreferences("history_sync", android.content.Context.MODE_PRIVATE)
+                    val owner = prefs.getString("owner_user_id", null)
+                    val uid = c.userId
+                    val local = if (owner != null && owner != uid) emptyList() else playLog.getEntries()
+                    val result = HistorySync.sync(c, local)
+                    if (owner != null && owner != uid) {
+                        playLog.replaceAll(result.merged)
+                    }
+                    prefs.edit().putString("owner_user_id", uid).apply()
+                    playLog.mergeIn(result.merged)
+                }
+                if (added > 0) historyVersion++
+                historySyncedAtMs = System.currentTimeMillis()
+                historySyncError = null
+            } catch (e: Exception) {
+                // The phone's copy is untouched; the next sync retries.
+                historySyncError = e.message ?: e.javaClass.simpleName
+            } finally {
+                historySyncing = false
+            }
         }
     }
 
@@ -479,5 +554,9 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         controller?.release()
         controller = null
         super.onCleared()
+    }
+
+    private companion object {
+        const val HISTORY_UPLOAD_DELAY_MS = 120_000L
     }
 }

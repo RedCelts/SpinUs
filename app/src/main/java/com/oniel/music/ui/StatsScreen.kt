@@ -64,7 +64,8 @@ fun StatsScreen(
     var pastWeeks by remember { mutableStateOf<List<WeekStats>>(emptyList()) }
     var streakDays by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
+    // Reloads when plays arrive from the account (history sync).
+    LaunchedEffect(player.historyVersion) {
         val nowMs = System.currentTimeMillis()
         val start = weekStartMs(nowMs)
         val end = start + 7L * 24 * 60 * 60 * 1000

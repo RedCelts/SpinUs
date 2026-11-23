@@ -45,6 +45,15 @@
     <string name="show_more">More</string>
     <string name="show_less">Less</string>
 
+    <!-- Listening history sync -->
+    <string name="history_title">Listening history</string>
+    <string name="history_subtitle">Saved to your Jellyfin account, so it stays after reinstalling and follows you to any phone you sign in on.</string>
+    <string name="history_syncing">Syncing…</string>
+    <string name="history_synced">Synced at %1$s</string>
+    <string name="history_not_yet">Not synced yet</string>
+    <string name="history_error">Couldn’t sync: %1$s. Your history is safe on this phone; it will retry.</string>
+    <string name="history_sync_now">Sync now</string>
+
     <!-- Built-in Tailscale -->
     <string name="ts_title">Tailscale (built-in)</string>
     <string name="ts_subtitle">Reach your server away from home without the Tailscale app.</string>

@@ -106,6 +106,11 @@ fun OnielMusicApp() {
         player.attachClient(client)
     }
 
+    // Listening history follows the account: sync on start / sign-in.
+    LaunchedEffect(auth) {
+        if (auth != null) player.syncHistoryNow()
+    }
+
     if (!authChecked) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -275,6 +280,10 @@ fun OnielMusicApp() {
                     authStore = authStore,
                     crossfadeSeconds = player.crossfadeSeconds,
                     onCrossfadeChanged = player::setCrossfade,
+                    historySyncedAtMs = player.historySyncedAtMs,
+                    historySyncError = player.historySyncError,
+                    historySyncing = player.historySyncing,
+                    onSyncHistory = player::syncHistoryNow,
                     onLoggedOut = { newServer ->
                         // Log out closes the presence socket and stops
                         // playback; the next sign-in reopens the socket.
