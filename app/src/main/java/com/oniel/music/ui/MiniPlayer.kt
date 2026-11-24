@@ -50,7 +50,7 @@ fun MiniPlayer(
             verticalAlignment = Alignment.CenterVertically
         ) {
             CoverImage(
-                url = client.imageUrl(track.albumId ?: track.id, track.imageTag, 200),
+                url = client.trackArtUrl(track, 200),
                 modifier = Modifier.size(48.dp),
                 cornerDp = 8.dp,
                 contentDescription = track.album

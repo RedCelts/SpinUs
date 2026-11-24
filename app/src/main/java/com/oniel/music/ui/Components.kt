@@ -24,6 +24,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,9 +67,16 @@ fun CoverImage(
     url: String?,
     modifier: Modifier = Modifier,
     cornerDp: Dp = 8.dp,
-    contentDescription: String? = null
+    contentDescription: String? = null,
+    /** Tried when [url] fails to load (e.g. an artist with no picture). */
+    fallbackUrl: String? = null
 ) {
-    if (url.isNullOrBlank()) {
+    val candidates = remember(url, fallbackUrl) {
+        listOfNotNull(url?.ifBlank { null }, fallbackUrl?.ifBlank { null }).distinct()
+    }
+    var attempt by remember(candidates) { mutableStateOf(0) }
+    val model = candidates.getOrNull(attempt)
+    if (model == null) {
         Box(
             modifier = modifier
                 .clip(RoundedCornerShape(cornerDp))
@@ -80,10 +91,13 @@ fun CoverImage(
         }
     } else {
         AsyncImage(
-            model = url,
+            model = model,
             contentDescription = contentDescription,
             contentScale = ContentScale.Crop,
-            modifier = modifier.clip(RoundedCornerShape(cornerDp))
+            onError = { attempt++ },
+            modifier = modifier
+                .clip(RoundedCornerShape(cornerDp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
         )
     }
 }

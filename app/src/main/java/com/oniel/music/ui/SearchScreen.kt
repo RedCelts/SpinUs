@@ -1,6 +1,23 @@
 package com.oniel.music.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import com.oniel.music.data.Genre
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -53,9 +70,16 @@ fun SearchScreen(
     player: PlayerController,
     onAlbumClick: (String) -> Unit,
     onTrackPlayed: () -> Unit,
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onGenreClick: (id: String, name: String) -> Unit = { _, _ -> }
 ) {
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var genres by remember { mutableStateOf<List<Genre>?>(null) }
+
+    // Genres to browse before typing (loaded once per visit).
+    LaunchedEffect(Unit) {
+        genres = try { client.getMusicGenres() } catch (e: Exception) { emptyList() }
+    }
     var searching by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<Track>?>(null) }
 
@@ -122,11 +146,10 @@ fun SearchScreen(
             }
         } else if (found == null) {
             if (query.isBlank()) {
-                Text(
-                    text = stringResource(R.string.search_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(16.dp)
+                GenreBrowser(
+                    genres = genres,
+                    client = client,
+                    onGenreClick = onGenreClick
                 )
             } else {
                 Text(
@@ -162,7 +185,7 @@ fun SearchScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onArtistClick(artist) }
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             ListenerAvatar(userName = artist, sizeDp = 44.dp)
@@ -171,8 +194,10 @@ fun SearchScreen(
                                 text = artist,
                                 style = MaterialTheme.typography.bodyLarge,
                                 maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
                             )
+                            ItemMoreButton(target = ActionTarget.ArtistItem(null, artist))
                         }
                     }
                 }
@@ -191,7 +216,7 @@ fun SearchScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onAlbumClick(albumId) }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                                .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             CoverImage(
@@ -202,7 +227,7 @@ fun SearchScreen(
                                     .height(48.dp),
                                 cornerDp = 6.dp
                             )
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = track.album,
                                     style = MaterialTheme.typography.bodyMedium,
@@ -218,6 +243,7 @@ fun SearchScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
+                            ItemMoreButton(target = ActionTarget.AlbumItem(albumId, track.album))
                         }
                     }
                 }
@@ -246,3 +272,108 @@ fun SearchScreen(
         }
     }
 }
+
+/**
+ * Shown under the search bar before anything is typed: every genre in
+ * the library as a coloured tile (with the genre's picture tucked in the
+ * corner when the server has one). Tap one to browse it.
+ */
+@Composable
+private fun GenreBrowser(
+    genres: List<Genre>?,
+    client: JellyfinClient,
+    onGenreClick: (id: String, name: String) -> Unit
+) {
+    when {
+        genres == null -> Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 32.dp),
+            contentAlignment = Alignment.Center
+        ) { CircularProgressIndicator() }
+
+        genres.isEmpty() -> Text(
+            text = stringResource(R.string.search_empty),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp)
+        )
+
+        else -> LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    text = stringResource(R.string.browse_genres),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                )
+            }
+            items(genres, key = { it.id }) { genre ->
+                GenreTile(
+                    name = genre.name,
+                    imageUrl = genre.imageTag?.let {
+                        try { client.imageUrl(genre.id, it, 200) } catch (e: Exception) { null }
+                    },
+                    onClick = { onGenreClick(genre.id, genre.name) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun GenreTile(
+    name: String,
+    imageUrl: String?,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(92.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(genreColorFor(name))
+            .clickable(onClick = onClick)
+    ) {
+        if (imageUrl != null) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 14.dp, y = 8.dp)
+                    .size(68.dp)
+                    .rotate(22f)
+                    .clip(RoundedCornerShape(6.dp))
+            )
+        }
+        Text(
+            text = name,
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp)
+        )
+    }
+}
+
+/** Fixed, warm-to-cool palette; a genre keeps its colour every visit. */
+private val GenrePalette = listOf(
+    Color(0xFFC77F0A), Color(0xFF0E4F52), Color(0xFF7A4A9E), Color(0xFF2E6E4E),
+    Color(0xFF9E3D4E), Color(0xFF3D6E9E), Color(0xFFB4532A), Color(0xFF5C6B1F),
+    Color(0xFF8A3E7A), Color(0xFF1F5C8A)
+)
+
+fun genreColorFor(name: String): Color =
+    GenrePalette[(name.lowercase().hashCode() and Int.MAX_VALUE) % GenrePalette.size]

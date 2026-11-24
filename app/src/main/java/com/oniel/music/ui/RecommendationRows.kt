@@ -80,6 +80,7 @@ private fun RecCard(
     line2: String,
     reason: String,
     round: Boolean = false,
+    fallbackUrl: String? = null,
     onClick: () -> Unit
 ) {
     Column(
@@ -91,7 +92,8 @@ private fun RecCard(
             url = imageUrl,
             modifier = Modifier.size(140.dp),
             cornerDp = if (round) 70.dp else 8.dp,
-            contentDescription = title
+            contentDescription = title,
+            fallbackUrl = fallbackUrl
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
@@ -144,7 +146,10 @@ fun YouMightEnjoyRow(
                     onClick = { onAlbumClick(pick.album.id) }
                 )
                 is Pick.ArtistPick -> RecCard(
-                    imageUrl = pick.coverAlbum?.let { client.imageUrl(it.id, it.imageTag, 300) },
+                    // Artists are always round, with their own picture
+                    // (album cover only if the artist has none).
+                    imageUrl = pick.coverAlbum?.artistId?.let { client.artistImageUrl(it, 300) },
+                    fallbackUrl = pick.coverAlbum?.let { client.imageUrl(it.id, it.imageTag, 300) },
                     title = pick.name,
                     line2 = stringResource(R.string.rec_artist),
                     reason = pick.reason,
@@ -152,7 +157,7 @@ fun YouMightEnjoyRow(
                     onClick = { onArtistClick(pick.name) }
                 )
                 is Pick.TrackPick -> RecCard(
-                    imageUrl = client.imageUrl(pick.track.albumId ?: pick.track.id, pick.track.imageTag, 300),
+                    imageUrl = client.trackArtUrl(pick.track, 300),
                     title = pick.track.title,
                     line2 = pick.track.artists.joinToString(", ").ifEmpty { pick.track.albumArtist },
                     reason = pick.reason,

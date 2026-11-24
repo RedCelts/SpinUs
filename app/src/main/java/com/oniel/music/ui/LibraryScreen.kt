@@ -141,7 +141,7 @@ private fun ArtistsSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { onArtistClick(artist) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ListenerAvatar(userName = artist, sizeDp = 48.dp)
@@ -150,8 +150,10 @@ private fun ArtistsSection(
                     text = artist,
                     style = MaterialTheme.typography.bodyLarge,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+                ItemMoreButton(target = ActionTarget.ArtistItem(null, artist))
             }
         }
     }

@@ -160,4 +160,19 @@
     <string name="settings_crossfade_seconds">%1$d seconds</string>
     <string name="settings_crossfade_off">Off — songs play back to back</string>
     <string name="settings_crossfade_note">The end of each song fades out while the next fades in. The fade starts early when a song is already fading out or ends in silence, and silence at the start of the next song is skipped. Songs from the same album play straight through. 0 turns crossfade off.</string>
+
+    <!-- v1.1.0: item menus, playlists, genres -->
+    <string name="more_options">More options</string>
+    <string name="action_favorite">Add to favorites</string>
+    <string name="action_unfavorite">Remove from favorites</string>
+    <string name="action_add_to_playlist">Add to playlist</string>
+    <string name="action_new_playlist">New playlist</string>
+    <string name="action_failed">Couldn\'t do that. Check the connection and try again.</string>
+    <string name="favorite_added">Added %1$s to favorites</string>
+    <string name="favorite_removed">Removed %1$s from favorites</string>
+    <string name="playlist_added_to">Added to %1$s</string>
+    <string name="playlist_name">Playlist name</string>
+    <string name="playlist_create">Create</string>
+    <string name="browse_genres">Browse all</string>
+    <string name="genre_empty">Nothing in this genre yet.</string>
 </resources>

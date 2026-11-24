@@ -570,3 +570,34 @@ the v1.2 script.)
   artists change, or with the refresh button).
 - UI: two rows under the quick tiles; tapping an outside suggestion opens
   a panel with a 30 s preview (pauses your music), Deezer and YouTube links.
+
+## v1.1.0 — Navigation, item menus, genres, artist carousel, edge-to-edge (2026-11-24)
+- Settings moved off the tab bar into the profile (avatar) menu, last
+  item under a divider; the screen gets a back arrow. Tab bar is now
+  Home / Library / Search and stays visible on every screen, the full
+  player included (mini player still hides while the player is open).
+- Search: before typing, every library genre shows as a coloured tile
+  (`/MusicGenres`); a tile opens `GenreScreen` (Play / Shuffle across the
+  genre's songs + its albums; `getGenreAlbums` / `getGenreTracks` via
+  `GenreIds`). The query survives leaving and coming back.
+- ⋮ menu (`ItemActions.kt`) on song rows (every `TrackRow`), album and
+  artist rows in Search / Library, and next to Play/Shuffle on album and
+  artist pages: Add to / Remove from favorites (`/UserFavoriteItems`,
+  falls back to `/Users/{id}/FavoriteItems` on 404), Add to playlist,
+  New playlist (`POST /Playlists`, `POST /Playlists/{id}/Items`, 100 ids
+  per request). Albums/artists add all their songs. The player's "+" now
+  really adds (the old dialog only listed playlists).
+  The client reaches rows through `LocalJellyfin` (CompositionLocal).
+- Loose songs (no album) use the artist's picture (`trackArtUrl`) in
+  tiles, mini player, player and the lock-screen notification. On Home,
+  artists are round with their own photo (album cover as fallback):
+  stations, artist picks and loose-song quick tiles. `CoverImage` takes
+  a `fallbackUrl` and shows the note placeholder if both fail.
+- Artist page albums: cover-flow `HorizontalPager` (centre full size;
+  neighbours shrink, fade, dip and turn ±30°). Tap a side cover to centre
+  it; tap the centre one to zoom it and open the album, which scales in
+  (nav enter/pop transitions on the album route).
+- Edge-to-edge: `enableEdgeToEdge` with transparent status and nav bars
+  (dark icons, contrast scrims off). Scaffold has zero content insets;
+  tab screens pad for the status bar, album/artist/genre/player backdrops
+  run under it with their buttons padded down.

@@ -537,7 +537,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         if (cl != null) {
             // Album art on the lock screen and notification.
             try {
-                metadata.setArtworkUri(Uri.parse(cl.imageUrl(albumId ?: id, imageTag, 600)))
+                metadata.setArtworkUri(Uri.parse(cl.trackArtUrl(this, 600)))
             } catch (e: Exception) {
                 // No artwork: the notification shows the app icon.
             }

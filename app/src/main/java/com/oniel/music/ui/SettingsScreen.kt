@@ -56,6 +56,7 @@ fun SettingsScreen(
     historySyncError: String? = null,
     historySyncing: Boolean = false,
     onSyncHistory: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
     onLoggedOut: (String?) -> Unit
 ) {
     var showServerDialog by remember { mutableStateOf(false) }
@@ -68,11 +69,26 @@ fun SettingsScreen(
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 16.dp)
     ) {
-        Text(
-            text = stringResource(R.string.settings_title),
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold
-        )
+        androidx.compose.foundation.layout.Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                androidx.compose.material3.IconButton(
+                    onClick = onBack,
+                    modifier = Modifier.padding(end = 4.dp)
+                ) {
+                    androidx.compose.material3.Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.back)
+                    )
+                }
+            }
+            Text(
+                text = stringResource(R.string.settings_title),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold
+            )
+        }
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
@@ -172,7 +188,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.0.9"),
+            text = stringResource(R.string.settings_version, "1.1.0"),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

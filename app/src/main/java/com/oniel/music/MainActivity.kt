@@ -6,6 +6,8 @@ import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
@@ -21,6 +23,17 @@ import com.oniel.music.ui.theme.OnielMusicTheme
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Edge to edge with fully transparent status and navigation bars
+        // (dark icons: the app is light-only). Must run before setContent.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+        )
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            // No grey scrim behind 3-button navigation either.
+            window.isNavigationBarContrastEnforced = false
+            window.isStatusBarContrastEnforced = false
+        }
         CrashLog.install(this)
         // Debug builds: `am start ... --ez ts_enable true` turns built-in
         // Tailscale on (used by the CI emulator smoke test).

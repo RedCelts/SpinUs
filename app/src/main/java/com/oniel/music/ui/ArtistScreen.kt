@@ -1,6 +1,23 @@
 package com.oniel.music.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.launch
+import kotlin.math.abs
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -113,6 +130,7 @@ fun ArtistScreen(
                     onClick = onBack,
                     modifier = Modifier
                         .align(Alignment.TopStart)
+                        .statusBarsPadding()
                         .padding(4.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
@@ -186,8 +204,9 @@ fun ArtistScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Button(
                         onClick = { player.play(tracks, 0); onTrackPlayed() },
@@ -197,6 +216,7 @@ fun ArtistScreen(
                         onClick = { player.play(tracks.shuffled(), 0); onTrackPlayed() },
                         modifier = Modifier.weight(1f)
                     ) { Text(stringResource(R.string.shuffle)) }
+                    ItemMoreButton(target = ActionTarget.ArtistItem(current.id, current.name))
                 }
             }
         }
@@ -231,23 +251,12 @@ fun ArtistScreen(
 
         if (albums.isNotEmpty()) {
             item { SectionTitle(stringResource(R.string.library_albums)) }
-            items(albums.chunked(2)) { pair ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    pair.forEach { album ->
-                        AlbumCard(
-                            title = album.name,
-                            subtitle = album.year?.toString() ?: album.artist,
-                            imageUrl = try { client.imageUrl(album.id, album.imageTag, 400) } catch (e: Exception) { null },
-                            onClick = { onAlbumClick(album.id) },
-                            cardWidth = 156.dp
-                        )
-                    }
-                }
+            item {
+                AlbumCarousel(
+                    albums = albums,
+                    client = client,
+                    onAlbumClick = onAlbumClick
+                )
             }
         }
     }
@@ -262,3 +271,120 @@ fun SectionTitle(text: String) {
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 20.dp, bottom = 8.dp)
     )
 }
+
+/**
+ * An artist's albums as a cover-flow carousel: the centred cover is full
+ * size, its neighbours shrink, fade, dip and turn away as they slide
+ * ("swoop" in and out while scrolling). Tapping a side cover brings it to
+ * the centre; tapping the centred one zooms it up and opens the album
+ * (the album page itself scales in — see AppNav).
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AlbumCarousel(
+    albums: List<Album>,
+    client: JellyfinClient,
+    onAlbumClick: (String) -> Unit
+) {
+    val pagerState = rememberPagerState(pageCount = { albums.size })
+    val scope = rememberCoroutineScope()
+    var opening by remember { mutableStateOf<String?>(null) }
+    val zoom = remember { Animatable(1f) }
+
+    HorizontalPager(
+        state = pagerState,
+        contentPadding = PaddingValues(horizontal = 76.dp),
+        pageSpacing = 0.dp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) { page ->
+        val album = albums[page]
+        // Signed distance from the centre: 0 centred, ±1 one page away.
+        val offset = (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+        val distance = abs(offset).coerceIn(0f, 1f)
+        val isOpening = opening == album.id
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .zIndex(if (isOpening) 2f else 1f - distance)
+                .graphicsLayer {
+                    val scale = mix(1f, 0.76f, distance) * (if (isOpening) zoom.value else 1f)
+                    scaleX = scale
+                    scaleY = scale
+                    alpha = mix(1f, 0.5f, distance)
+                    rotationY = offset.coerceIn(-1f, 1f) * 30f
+                    translationY = distance * 28.dp.toPx()
+                    cameraDistance = 14f * density
+                }
+                .clickable {
+                    if (opening != null) {
+                        // Already opening one.
+                    } else if (page != pagerState.currentPage) {
+                        scope.launch { pagerState.animateScrollToPage(page) }
+                    } else {
+                        opening = album.id
+                        scope.launch {
+                            zoom.snapTo(1f)
+                            zoom.animateTo(1.3f, tween(durationMillis = 240, easing = FastOutSlowInEasing))
+                            onAlbumClick(album.id)
+                            // Back on this page later: start from rest.
+                            kotlinx.coroutines.delay(500)
+                            zoom.snapTo(1f)
+                            opening = null
+                        }
+                    }
+                }
+        ) {
+            CoverImage(
+                url = try { client.imageUrl(album.id, album.imageTag, 600) } catch (e: Exception) { null },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f)
+                    .shadow(elevation = 8.dp, shape = RoundedCornerShape(16.dp)),
+                cornerDp = 16.dp,
+                contentDescription = album.name
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = album.name,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = album.year?.toString() ?: album.artist,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1
+            )
+        }
+    }
+    // Page dots.
+    if (albums.size > 1) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 4.dp),
+            horizontalArrangement = Arrangement.Center
+        ) {
+            albums.indices.take(12).forEach { i ->
+                val selected = i == pagerState.currentPage.coerceAtMost(11)
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 3.dp)
+                        .size(if (selected) 8.dp else 6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (selected) MaterialTheme.colorScheme.tertiary
+                            else MaterialTheme.colorScheme.outline
+                        )
+                )
+            }
+        }
+    }
+}
+
+private fun mix(start: Float, stop: Float, fraction: Float): Float = start + (stop - start) * fraction

@@ -44,7 +44,9 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.0.9"
+        const val CLIENT_VERSION = "1.1.0"
+        /** Track ids per playlist request (keeps the URL short). */
+        private const val PLAYLIST_CHUNK = 100
         /**
          * Containers sent as-is (no transcode) by [audioUrl]: all play in
          * ExoPlayer on Android 8+. "m4a%7Caac" is Jellyfin's container|codec
@@ -340,6 +342,116 @@ class JellyfinClient(
         }
     }
 
+    // ---- Genres (v1.1.0) ----
+
+    /** Every music genre in the library, A to Z. */
+    suspend fun getMusicGenres(): List<Genre> {
+        val uid = requireUserId()
+        val json = getJson(
+            "/MusicGenres?userId=$uid&Recursive=true&SortBy=SortName&SortOrder=Ascending",
+            "genres"
+        )
+        val items = json.optJSONArray("Items") ?: return emptyList()
+        return (0 until items.length()).mapNotNull { i ->
+            val item = items.optJSONObject(i) ?: return@mapNotNull null
+            val name = item.optString("Name", "")
+            if (name.isBlank()) return@mapNotNull null
+            Genre(
+                id = item.getString("Id"),
+                name = name,
+                imageTag = item.optJSONObject("ImageTags")?.optStringOrNull("Primary")
+            )
+        }
+    }
+
+    /** Albums tagged with one genre, A to Z. */
+    suspend fun getGenreAlbums(genreId: String): List<Album> {
+        val json = getItems(
+            "IncludeItemTypes=MusicAlbum&Recursive=true&GenreIds=$genreId" +
+                "&SortBy=SortName&SortOrder=Ascending" +
+                "&Fields=DateCreated,PremiereDate,UserData"
+        )
+        return json.optJSONArray("Items")?.toAlbumList().orEmpty()
+    }
+
+    /** Songs tagged with one genre (for Play / Shuffle on the genre page). */
+    suspend fun getGenreTracks(genreId: String): List<Track> {
+        val json = getItems(
+            "IncludeItemTypes=Audio&Recursive=true&GenreIds=$genreId" +
+                "&SortBy=Album,ParentIndexNumber,IndexNumber" +
+                "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks,UserData,PremiereDate"
+        )
+        return json.optJSONArray("Items")?.toTrackList().orEmpty()
+    }
+
+    // ---- Favorites (v1.1.0) ----
+
+    /** Favorite changes made in this session, so every screen agrees right away. */
+    private val favoriteOverrides = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    /**
+     * Is [itemId] a favorite? Session changes win, then [known] (from a
+     * list read), else the server is asked.
+     */
+    suspend fun isFavorite(itemId: String, known: Boolean? = null): Boolean {
+        favoriteOverrides[itemId]?.let { return it }
+        if (known != null) return known
+        val uid = requireUserId()
+        val json = getJson("/Users/$uid/Items/$itemId", "favorite state")
+        return json.optJSONObject("UserData")?.optBoolean("IsFavorite", false) ?: false
+    }
+
+    /**
+     * Mark or unmark a song, album or artist as a favorite. Uses the
+     * current endpoint first and the older per-user one when the server
+     * does not know it (404).
+     */
+    suspend fun setFavorite(itemId: String, favorite: Boolean) {
+        val uid = requireUserId()
+        fun build(path: String): Request {
+            val b = authedRequest(path)
+            return if (favorite) b.post("".toRequestBody(null)).build() else b.delete().build()
+        }
+        val result = executeRaw(build("/UserFavoriteItems/$itemId?userId=$uid"), "favorite")
+        if (result == null) {
+            executeRaw(build("/Users/$uid/FavoriteItems/$itemId"), "favorite")
+                ?: throw IOException("favorite failed: not supported by this server")
+        }
+        favoriteOverrides[itemId] = favorite
+        detailsCache.remove(itemId)
+    }
+
+    // ---- Playlists (v1.1.0) ----
+
+    /** Create an audio playlist holding [trackIds]. Returns the new playlist id. */
+    suspend fun createPlaylist(name: String, trackIds: List<String>): String {
+        val uid = requireUserId()
+        val body = JSONObject().apply {
+            put("Name", name)
+            put("Ids", JSONArray(trackIds.take(PLAYLIST_CHUNK)))
+            put("UserId", uid)
+            put("MediaType", "Audio")
+        }.toString().toRequestBody(JSON_MEDIA_TYPE)
+        val request = authedRequest("/Playlists").post(body).build()
+        val id = executeJson(request, "create playlist").optString("Id", "")
+        if (id.isBlank()) throw IOException("create playlist failed: no id returned")
+        // Long lists (a whole artist) go in after, in URL-sized chunks.
+        if (trackIds.size > PLAYLIST_CHUNK) addToPlaylist(id, trackIds.drop(PLAYLIST_CHUNK))
+        return id
+    }
+
+    /** Append [trackIds] to an existing playlist. */
+    suspend fun addToPlaylist(playlistId: String, trackIds: List<String>) {
+        val uid = requireUserId()
+        trackIds.chunked(PLAYLIST_CHUNK).forEach { chunk ->
+            val request = authedRequest(
+                "/Playlists/$playlistId/Items?ids=${chunk.joinToString(",")}&userId=$uid"
+            ).post("".toRequestBody(null)).build()
+            executeRaw(request, "add to playlist")
+                ?: throw IOException("add to playlist failed: playlist not found")
+        }
+    }
+
     // ---- Lyrics ----
 
     /**
@@ -559,6 +671,21 @@ class JellyfinClient(
         val tag = if (!imageTag.isNullOrEmpty()) "&tag=$imageTag" else ""
         return "$base/Items/$itemId/Images/Primary?fillWidth=$width&quality=80&api_key=$tok$tag"
     }
+
+    /**
+     * Artwork for a track: its album's cover, or — for a loose song with
+     * no album — the artist's picture.
+     */
+    fun trackArtUrl(track: Track, width: Int = 300): String {
+        val albumId = track.albumId
+        if (albumId != null) return imageUrl(albumId, track.imageTag, width)
+        val artistId = track.artistId
+        if (artistId != null) return imageUrl(artistId, null, width)
+        return imageUrl(track.id, track.imageTag, width)
+    }
+
+    /** An artist's own picture (404s, and so falls back, when there is none). */
+    fun artistImageUrl(artistId: String, width: Int = 300): String = imageUrl(artistId, null, width)
 
     // ---- Playback reporting ----
 

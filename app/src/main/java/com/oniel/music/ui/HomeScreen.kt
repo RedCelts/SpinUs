@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -65,7 +67,8 @@ fun HomeScreen(
     onOpenFriends: () -> Unit,
     onOpenStats: () -> Unit,
     onOpenLibrary: (Int) -> Unit,
-    onArtistClick: (String) -> Unit = {}
+    onArtistClick: (String) -> Unit = {},
+    onOpenSettings: () -> Unit = {}
 ) {
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf(false) }
@@ -167,7 +170,7 @@ fun HomeScreen(
         contentPadding = PaddingValues(bottom = 96.dp)
     ) {
         item {
-            // Top row: profile icon (menu: Friends, Listening stats).
+            // Top row: profile icon (menu: Friends, Listening stats, Settings).
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -194,6 +197,15 @@ fun HomeScreen(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.menu_stats)) },
                             onClick = { menuOpen = false; onOpenStats() }
+                        )
+                        // Settings lives at the bottom of the profile menu.
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.tab_settings)) },
+                            leadingIcon = {
+                                Icon(imageVector = Icons.Filled.Settings, contentDescription = null)
+                            },
+                            onClick = { menuOpen = false; onOpenSettings() }
                         )
                     }
                 }
@@ -238,11 +250,7 @@ fun HomeScreen(
                                 row.forEach { track ->
                                     QuickTile(
                                         track = track,
-                                        imageUrl = client.imageUrl(
-                                            track.albumId ?: track.id,
-                                            track.imageTag,
-                                            300
-                                        ),
+                                        imageUrl = client.trackArtUrl(track, 300),
                                         onClick = {
                                             val albumId = track.albumId
                                             if (albumId != null) {
@@ -345,7 +353,10 @@ fun HomeScreen(
                         items(topArtists) { station ->
                             StationCard(
                                 station = station,
-                                imageUrl = station.coverAlbum?.let {
+                                imageUrl = station.coverAlbum?.artistId?.let {
+                                    client.artistImageUrl(it, 300)
+                                },
+                                fallbackUrl = station.coverAlbum?.let {
                                     client.imageUrl(it.id, it.imageTag, 300)
                                 },
                                 onClick = {
@@ -421,21 +432,25 @@ private fun QuickTile(
         shape = RoundedCornerShape(8.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            // Loose song (no album): the artist's picture, in a round frame.
+            val loose = track.albumId == null
             CoverImage(
                 url = imageUrl,
-                modifier = Modifier.size(56.dp),
-                cornerDp = 8.dp
+                modifier = Modifier
+                    .padding(if (loose) 4.dp else 0.dp)
+                    .size(if (loose) 48.dp else 56.dp),
+                cornerDp = if (loose) 24.dp else 8.dp
             )
             Column(modifier = Modifier.padding(horizontal = 10.dp)) {
                 Text(
-                    text = track.album,
+                    text = track.album.ifBlank { track.title },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = track.albumArtist,
+                    text = track.albumArtist.ifBlank { track.artists.joinToString(", ") },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -471,6 +486,7 @@ private fun AlbumShelf(
 private fun StationCard(
     station: ArtistStation,
     imageUrl: String?,
+    fallbackUrl: String?,
     onClick: () -> Unit
 ) {
     Column(
@@ -483,7 +499,8 @@ private fun StationCard(
             url = imageUrl,
             modifier = Modifier.size(120.dp),
             cornerDp = 60.dp,
-            contentDescription = station.name
+            contentDescription = station.name,
+            fallbackUrl = fallbackUrl
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(

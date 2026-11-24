@@ -139,3 +139,10 @@ data class ItemDetails(
                 parentBackdropItemId?.let { it to tag }
             }
 }
+
+/** One music genre in the library (v1.1.0: browse by genre in Search). */
+data class Genre(
+    val id: String,
+    val name: String,
+    val imageTag: String?
+)

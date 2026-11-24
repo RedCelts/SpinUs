@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
@@ -148,7 +149,7 @@ fun PlayerScreen(
         LocalConfiguration.current.screenHeightDp.dp.toPx()
     }
 
-    val coverUrl = client.imageUrl(track.albumId ?: track.id, track.imageTag, 600)
+    val coverUrl = client.trackArtUrl(track, 600)
     // Background: the artist's backdrop, else the album's, else the cover blurred.
     val backdropUrl = client.backdropFor(artistDetails) ?: client.backdropFor(albumDetails)
 
@@ -191,7 +192,9 @@ fun PlayerScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = onMinimize) {
@@ -436,9 +439,11 @@ fun PlayerScreen(
     }
 
     if (showAddToPlaylist) {
+        val playlistTrackId = track.id
         AddToPlaylistDialog(
             client = client,
-            track = track,
+            title = track.title,
+            resolveTrackIds = { listOf(playlistTrackId) },
             onDismiss = { showAddToPlaylist = false }
         )
     }
@@ -524,6 +529,7 @@ fun FullLyricsScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .statusBarsPadding()
                 .padding(top = 8.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -94,6 +95,7 @@ fun AlbumDetailScreen(
                     onClick = onBack,
                     modifier = Modifier
                         .align(Alignment.TopStart)
+                        .statusBarsPadding()
                         .padding(4.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f))
@@ -167,13 +169,17 @@ fun AlbumDetailScreen(
                     DetailLine(current.studios.take(2), modifier = Modifier.padding(top = 2.dp))
                     Spacer(modifier = Modifier.height(12.dp))
                     if (tracks.isNotEmpty()) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Button(onClick = { player.play(tracks, 0); onTrackPlayed() }) {
                                 Text(stringResource(R.string.play))
                             }
                             OutlinedButton(onClick = { player.play(tracks.shuffled(), 0); onTrackPlayed() }) {
                                 Text(stringResource(R.string.shuffle))
                             }
+                            ItemMoreButton(target = ActionTarget.AlbumItem(albumId, current.name))
                         }
                     }
                 }
@@ -224,7 +230,7 @@ fun TrackRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (number != null) {
@@ -258,5 +264,7 @@ fun TrackRow(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        // ⋮ Favorite / Add to playlist / New playlist.
+        ItemMoreButton(target = ActionTarget.Song(track))
     }
 }
