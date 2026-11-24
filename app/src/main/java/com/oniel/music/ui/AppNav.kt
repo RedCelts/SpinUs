@@ -245,7 +245,8 @@ fun OnielMusicApp() {
                     onOpenStats = { navController.navigate(Routes.STATS) },
                     onOpenLibrary = { tab ->
                         navController.navigate(Routes.library(tab))
-                    }
+                    },
+                    onArtistClick = { name -> openArtist(null, name) }
                 )
             }
             composable(

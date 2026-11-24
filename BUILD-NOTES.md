@@ -550,3 +550,23 @@ the v1.2 script.)
 - Endpoint not yet exercised against the user's server (Jellyfin 12.2.0);
   a failure only shows "Couldn't sync" — the phone copy is unaffected.
 - JVM checks: 16 merge/chunk/mergeIn checks pass.
+
+## v1.0.9 — "You might enjoy" + "Recommended additions" on Home (2026-11-24)
+- `data/Recommend.kt` (pure, JVM-tested, 23 checks): `matchKey` (accent/
+  case/feat./"(Live)" tolerant name matching), `Taste` (artist weights:
+  PlayLog plays with a 30-day half-life + log play counts + favorites),
+  `YouMightEnjoy.pick` (barely-played albums by top artists, Jellyfin
+  similar albums by other artists, neglected artists, unplayed songs;
+  stable per day), `Additions.assemble` (Deezer related artists ranked by
+  how many of your top artists they relate to; their popular songs you
+  don't own; new albums/EPs/singles from your top artists in the last
+  180 days that aren't in the library).
+- `JellyfinClient.getSimilarAlbums` (/Items/{id}/Similar).
+- `DeezerClient`: public api.deezer.com (no key): search/artist,
+  artist/{id}/related, /top, /albums, track & album previews (fetched on
+  tap; preview links expire).
+- `Recommendations`: seeds = top 5 artists; ~25 spaced Deezer calls;
+  cached 12 h in files/recs/additions.json (refetched sooner if your top
+  artists change, or with the refresh button).
+- UI: two rows under the quick tiles; tapping an outside suggestion opens
+  a panel with a 30 s preview (pauses your music), Deezer and YouTube links.

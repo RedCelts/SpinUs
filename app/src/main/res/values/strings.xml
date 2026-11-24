@@ -45,6 +45,25 @@
     <string name="show_more">More</string>
     <string name="show_less">Less</string>
 
+    <!-- Home recommendations -->
+    <string name="rec_enjoy_title">You might enjoy</string>
+    <string name="rec_enjoy_subtitle">From your library, based on what you play</string>
+    <string name="rec_artist">Artist</string>
+    <string name="rec_add_title">Recommended additions</string>
+    <string name="rec_add_subtitle">Not in your library yet · new releases and similar artists</string>
+    <string name="rec_refresh">Refresh recommendations</string>
+    <string name="rec_add_loading">Finding music for you…</string>
+    <string name="rec_add_error">Couldn’t reach the music catalog. Tap refresh to try again.</string>
+    <string name="rec_add_empty">Play a few songs and suggestions will appear here.</string>
+    <string name="rec_not_in_library">Not in your library</string>
+    <string name="rec_play_preview">Play 30-second preview</string>
+    <string name="rec_stop_preview">Stop preview</string>
+    <string name="rec_loading_preview">Loading preview…</string>
+    <string name="rec_no_preview">No preview available</string>
+    <string name="rec_open_deezer">Deezer</string>
+    <string name="rec_youtube">YouTube</string>
+    <string name="rec_close">Close</string>
+
     <!-- Listening history sync -->
     <string name="history_title">Listening history</string>
     <string name="history_subtitle">Saved to your Jellyfin account, so it stays after reinstalling and follows you to any phone you sign in on.</string>

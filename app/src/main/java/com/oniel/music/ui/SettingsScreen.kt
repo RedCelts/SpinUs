@@ -172,7 +172,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.0.8"),
+            text = stringResource(R.string.settings_version, "1.0.9"),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

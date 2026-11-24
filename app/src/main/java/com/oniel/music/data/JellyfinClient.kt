@@ -44,7 +44,7 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.0.8"
+        const val CLIENT_VERSION = "1.0.9"
         /**
          * Containers sent as-is (no transcode) by [audioUrl]: all play in
          * ExoPlayer on Android 8+. "m4a%7Caac" is Jellyfin's container|codec
@@ -282,6 +282,22 @@ class JellyfinClient(
                 "&Fields=DateCreated,PremiereDate,UserData"
         )
         return json.optJSONArray("Items")?.toAlbumList().orEmpty()
+    }
+
+    /** Albums Jellyfin considers similar to [albumId] (genres, artists, tags). */
+    suspend fun getSimilarAlbums(albumId: String, limit: Int = 8): List<Album> {
+        val uid = requireUserId()
+        val json = getJson(
+            "/Items/$albumId/Similar?userId=$uid&limit=$limit&fields=DateCreated,PremiereDate,UserData",
+            "similar albums"
+        )
+        val items = json.optJSONArray("Items") ?: return emptyList()
+        val albumsOnly = JSONArray()
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            if (item.optString("Type") == "MusicAlbum") albumsOnly.put(item)
+        }
+        return albumsOnly.toAlbumList()
     }
 
     /** All tracks by an artist (for Play / Shuffle on the artist page). */

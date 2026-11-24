@@ -64,7 +64,8 @@ fun HomeScreen(
     onAlbumClick: (String) -> Unit,
     onOpenFriends: () -> Unit,
     onOpenStats: () -> Unit,
-    onOpenLibrary: (Int) -> Unit
+    onOpenLibrary: (Int) -> Unit,
+    onArtistClick: (String) -> Unit = {}
 ) {
     var loading by remember { mutableStateOf(true) }
     var loadError by remember { mutableStateOf(false) }
@@ -76,6 +77,18 @@ fun HomeScreen(
     var topArtists by remember { mutableStateOf<List<ArtistStation>>(emptyList()) }
     var allTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
     var menuOpen by remember { mutableStateOf(false) }
+
+    // Recommendations (load after the main shelves, never block Home).
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val deezer = remember { com.oniel.music.data.DeezerClient(com.oniel.music.net.NetClients.http) }
+    val recs = remember { Recommendations(context, deezer) }
+    var libraryAlbums by remember { mutableStateOf<List<Album>>(emptyList()) }
+    var picks by remember { mutableStateOf<List<com.oniel.music.data.Pick>>(emptyList()) }
+    var additions by remember { mutableStateOf(recs.cachedAdditions()) }
+    var additionsRefreshing by remember { mutableStateOf(false) }
+    var additionsError by remember { mutableStateOf(false) }
+    var refreshTick by remember { mutableStateOf(0) }
+    var openAddition by remember { mutableStateOf<com.oniel.music.data.Addition?>(null) }
 
     LaunchedEffect(Unit) {
         try {
@@ -96,6 +109,7 @@ fun HomeScreen(
                 .take(20)
             recentlyAdded = added
             allTracks = tracks
+            libraryAlbums = albums
             // Recommended stations: the artists with the most played albums
             // (play counts summed from their tracks).
             topArtists = albumsWithPlays
@@ -115,6 +129,37 @@ fun HomeScreen(
         } finally {
             loading = false
         }
+    }
+
+    // "You might enjoy" + "Recommended additions", once the library is loaded.
+    LaunchedEffect(libraryAlbums, refreshTick) {
+        if (libraryAlbums.isEmpty()) return@LaunchedEffect
+        val nowMs = System.currentTimeMillis()
+        val plays = player.playLogEntries()
+        val profile = com.oniel.music.data.Taste.build(plays, allTracks, nowMs)
+        picks = try {
+            recs.youMightEnjoy(client, profile, libraryAlbums, allTracks, plays, nowMs)
+        } catch (e: Exception) {
+            emptyList()
+        }
+        additionsRefreshing = true
+        try {
+            additions = recs.additions(profile, allTracks, libraryAlbums, nowMs, force = refreshTick > 0)
+            additionsError = false
+        } catch (e: Exception) {
+            additionsError = true
+        } finally {
+            additionsRefreshing = false
+        }
+    }
+
+    openAddition?.let { addition ->
+        AdditionDialog(
+            addition = addition,
+            deezer = deezer,
+            player = player,
+            onDismiss = { openAddition = null }
+        )
     }
 
     LazyColumn(
@@ -215,6 +260,30 @@ fun HomeScreen(
                         }
                     }
                 }
+            }
+
+            // You might enjoy (from the library) + Recommended additions (not in it).
+            if (picks.isNotEmpty()) {
+                item {
+                    YouMightEnjoyRow(
+                        picks = picks,
+                        client = client,
+                        onAlbumClick = onAlbumClick,
+                        onArtistClick = onArtistClick,
+                        onPlayTrack = { player.playSingle(it) }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+            item {
+                AdditionsRow(
+                    items = additions,
+                    refreshing = additionsRefreshing,
+                    error = additionsError,
+                    onRefresh = { refreshTick++ },
+                    onOpen = { openAddition = it }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // (2) New releases.
