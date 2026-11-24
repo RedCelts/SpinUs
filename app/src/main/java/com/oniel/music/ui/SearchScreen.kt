@@ -20,6 +20,7 @@ import coil.compose.AsyncImage
 import com.oniel.music.data.Genre
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -100,7 +101,11 @@ fun SearchScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+    ) {
         Text(
             text = stringResource(R.string.search_title),
             style = MaterialTheme.typography.headlineSmall,
@@ -169,7 +174,7 @@ fun SearchScreen(
                 .distinctBy { it.albumId }
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 96.dp)
+                contentPadding = PaddingValues(bottom = bottomChromePadding())
             ) {
                 if (artists.isNotEmpty()) {
                     item {
@@ -301,7 +306,7 @@ private fun GenreBrowser(
 
         else -> LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bottomChromePadding()),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.fillMaxSize()

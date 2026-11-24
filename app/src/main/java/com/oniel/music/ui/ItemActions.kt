@@ -59,6 +59,16 @@ import kotlinx.coroutines.launch
  */
 val LocalJellyfin = staticCompositionLocalOf<JellyfinClient?> { null }
 
+/**
+ * Height of the frosted bottom chrome (mini player + tab bar + system nav
+ * bar). Screens scroll under it, so lists pad their end by this much.
+ */
+val LocalBottomChrome = staticCompositionLocalOf { 0.dp }
+
+/** Bottom content padding for a scrolling screen: clears the bottom chrome. */
+@Composable
+fun bottomChromePadding(): androidx.compose.ui.unit.Dp = LocalBottomChrome.current + 16.dp
+
 /** What a ⋮ menu acts on. */
 sealed class ActionTarget {
     abstract val title: String

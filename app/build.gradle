@@ -12,8 +12,8 @@ android {
         applicationId "com.oniel.music"
         minSdk 26
         targetSdk 34
-        versionCode 11
-        versionName "1.1.0"
+        versionCode 12
+        versionName "1.1.1"
     }
 
     // Sign with the same key as every APK already on the phone
@@ -93,6 +93,8 @@ dependencies {
 
     // Image loading
     implementation 'io.coil-kt:coil-compose:2.6.0'
+    // Frosted (blurred) tab bar and status-bar strip.
+    implementation 'dev.chrisbanes.haze:haze:0.7.3'
 
     // Preferences storage (server address, settings)
     implementation 'androidx.datastore:datastore-preferences:1.1.1'

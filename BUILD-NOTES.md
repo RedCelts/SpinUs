@@ -601,3 +601,13 @@ the v1.2 script.)
   (dark icons, contrast scrims off). Scaffold has zero content insets;
   tab screens pad for the status bar, album/artist/genre/player backdrops
   run under it with their buttons padded down.
+
+## v1.1.1 — Frosted tab bar and status bar (2026-11-24)
+- Haze 0.7.3 (`dev.chrisbanes.haze`, Compose 1.6 line): the NavHost is the
+  haze source; the bottom chrome (mini player + tab bar) and a status-bar
+  height strip are `hazeChild`ren — light tint (background @ 45%), 10 dp
+  blur, no noise. Android 12+ blurs; older versions get the tint only.
+- NavHost now fills the screen; lists pad their end with
+  `bottomChromePadding()` (`LocalBottomChrome` = measured bottom chrome
+  + 16 dp) so content scrolls under the bar. Home, Stats and Settings
+  also scroll under the status strip; Library/Search keep fixed headers.

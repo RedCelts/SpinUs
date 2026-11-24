@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -81,7 +82,11 @@ fun LibraryScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+    ) {
         Text(
             text = stringResource(R.string.library_title),
             style = MaterialTheme.typography.headlineSmall,
@@ -135,7 +140,7 @@ private fun ArtistsSection(
         .entries
         .sortedByDescending { it.value }
         .map { it.key }
-    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
+    LazyColumn(contentPadding = PaddingValues(bottom = bottomChromePadding())) {
         items(artists) { artist ->
             Row(
                 modifier = Modifier
@@ -167,7 +172,7 @@ private fun AlbumsSection(
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = bottomChromePadding()),
         modifier = Modifier.fillMaxSize()
     ) {
         items(albums) { album ->
@@ -188,7 +193,7 @@ private fun SongsSection(
     player: PlayerController,
     onTrackPlayed: () -> Unit
 ) {
-    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
+    LazyColumn(contentPadding = PaddingValues(bottom = bottomChromePadding())) {
         itemsIndexed(tracks) { index, track ->
             TrackRow(
                 number = index + 1,
@@ -213,7 +218,7 @@ private fun SongsSection(
 private fun PlaylistsSection(
     playlists: List<Playlist>
 ) {
-    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
+    LazyColumn(contentPadding = PaddingValues(bottom = bottomChromePadding())) {
         items(playlists) { playlist ->
             Row(
                 modifier = Modifier
@@ -274,7 +279,7 @@ private fun LikedSection(
         }
         return
     }
-    LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
+    LazyColumn(contentPadding = PaddingValues(bottom = bottomChromePadding())) {
         itemsIndexed(tracks) { index, track ->
             TrackRow(
                 number = index + 1,

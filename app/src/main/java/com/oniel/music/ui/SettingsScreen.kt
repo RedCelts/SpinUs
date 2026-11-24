@@ -38,6 +38,7 @@ import com.oniel.music.R
 import com.oniel.music.data.AuthStore
 import com.oniel.music.data.Crossfade
 import com.oniel.music.data.SavedAuth
+import androidx.compose.foundation.layout.statusBarsPadding
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -67,7 +68,9 @@ fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 16.dp)
+            // Scrolls under the frosted status strip and bottom chrome.
+            .statusBarsPadding()
+            .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = bottomChromePadding())
     ) {
         androidx.compose.foundation.layout.Row(
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
@@ -188,7 +191,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.1.0"),
+            text = stringResource(R.string.settings_version, "1.1.1"),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

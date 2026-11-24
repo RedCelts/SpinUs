@@ -83,7 +83,7 @@ fun AlbumDetailScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 96.dp)
+        contentPadding = PaddingValues(bottom = bottomChromePadding())
     ) {
         item {
             BackdropHeader(

@@ -9,6 +9,15 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.ui.graphics.Color
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +29,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
@@ -31,6 +41,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
@@ -162,13 +173,24 @@ fun OnielMusicApp() {
         navController.navigate(Routes.artist(id, name))
     }
 
+    // Frosted glass: the screens are the haze source; the bottom chrome
+    // and a status-bar strip blur (lightly) whatever scrolls beneath them.
+    val hazeState = remember { HazeState() }
+    val pageBackground = MaterialTheme.colorScheme.background
+    val glass = HazeStyle(
+        tint = pageBackground.copy(alpha = 0.45f),
+        blurRadius = 10.dp,
+        noiseFactor = 0f
+    )
+
     CompositionLocalProvider(LocalJellyfin provides client) {
         Scaffold(
             // Edge to edge: the status / navigation bars are transparent and
             // each screen pads itself (backdrops run up under the status bar).
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            containerColor = pageBackground,
             bottomBar = {
-                Column {
+                Column(modifier = Modifier.hazeChild(state = hazeState, style = glass)) {
                     if (showMiniPlayer) {
                         MiniPlayer(
                             client = client,
@@ -177,7 +199,10 @@ fun OnielMusicApp() {
                         )
                     }
                     run {
-                        NavigationBar {
+                        NavigationBar(
+                            containerColor = Color.Transparent,
+                            tonalElevation = 0.dp
+                        ) {
                             NavigationBarItem(
                                 selected = currentRoute == Routes.HOME,
                                 onClick = {
@@ -231,164 +256,170 @@ fun OnielMusicApp() {
                 }
             }
         ) { innerPadding ->
-            NavHost(
-                navController = navController,
-                startDestination = Routes.HOME,
-                modifier = Modifier.padding(bottom = innerPadding.calculateBottomPadding())
-            ) {
-                composable(Routes.HOME) {
-                    Box(modifier = Modifier.statusBarsPadding()) {
-                        HomeScreen(
-                            client = client,
-                            player = player,
-                            onAlbumClick = { albumId ->
-                                navController.navigate(Routes.album(albumId))
+            Box(modifier = Modifier.fillMaxSize()) {
+                CompositionLocalProvider(LocalBottomChrome provides innerPadding.calculateBottomPadding()) {
+                    NavHost(
+                        navController = navController,
+                        startDestination = Routes.HOME,
+                        // Full height: content runs under the frosted bars.
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .haze(state = hazeState, style = glass)
+                            .background(pageBackground)
+                    ) {
+                        composable(Routes.HOME) {
+                            HomeScreen(
+                                client = client,
+                                player = player,
+                                onAlbumClick = { albumId ->
+                                    navController.navigate(Routes.album(albumId))
+                                },
+                                onOpenFriends = { showFriends = true },
+                                onOpenStats = { navController.navigate(Routes.STATS) },
+                                onOpenSettings = {
+                                    navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
+                                },
+                                onOpenLibrary = { tab ->
+                                    navController.navigate(Routes.library(tab))
+                                },
+                                onArtistClick = { name -> openArtist(null, name) }
+                            )
+                        }
+                        composable(
+                            route = Routes.LIBRARY,
+                            arguments = listOf(navArgument("tab") { type = NavType.IntType })
+                        ) { entry ->
+                            LibraryScreen(
+                                client = client,
+                                player = player,
+                                initialTab = entry.arguments?.getInt("tab") ?: 0,
+                                onAlbumClick = { albumId ->
+                                    navController.navigate(Routes.album(albumId))
+                                },
+                                onTrackPlayed = { navController.navigate(Routes.PLAYER) },
+                                onArtistClick = { name -> openArtist(null, name) }
+                            )
+                        }
+                        composable(Routes.SEARCH) {
+                            SearchScreen(
+                                client = client,
+                                player = player,
+                                onAlbumClick = { albumId ->
+                                    navController.navigate(Routes.album(albumId))
+                                },
+                                onTrackPlayed = { navController.navigate(Routes.PLAYER) },
+                                onArtistClick = { name -> openArtist(null, name) },
+                                onGenreClick = { id, name -> navController.navigate(Routes.genre(id, name)) }
+                            )
+                        }
+                        composable(
+                            route = Routes.GENRE,
+                            arguments = listOf(
+                                navArgument("id") { type = NavType.StringType; defaultValue = "" },
+                                navArgument("name") { type = NavType.StringType; defaultValue = "" }
+                            )
+                        ) { entry ->
+                            GenreScreen(
+                                genreId = entry.arguments?.getString("id").orEmpty(),
+                                genreName = entry.arguments?.getString("name").orEmpty(),
+                                client = client,
+                                player = player,
+                                onBack = { navController.popBackStack() },
+                                onAlbumClick = { albumId -> navController.navigate(Routes.album(albumId)) },
+                                onTrackPlayed = { navController.navigate(Routes.PLAYER) }
+                            )
+                        }
+                        composable(Routes.SETTINGS) {
+                            SettingsScreen(
+                                auth = savedAuth,
+                                authStore = authStore,
+                                crossfadeSeconds = player.crossfadeSeconds,
+                                onCrossfadeChanged = player::setCrossfade,
+                                historySyncedAtMs = player.historySyncedAtMs,
+                                historySyncError = player.historySyncError,
+                                historySyncing = player.historySyncing,
+                                onSyncHistory = player::syncHistoryNow,
+                                onBack = { navController.popBackStack() },
+                                onLoggedOut = { newServer ->
+                                    // Log out closes the presence socket and stops
+                                    // playback; the next sign-in reopens the socket.
+                                    client.closePresence()
+                                    player.stopPlayback()
+                                    pendingServer = newServer
+                                    auth = null
+                                }
+                            )
+                        }
+                        composable(
+                            route = Routes.ALBUM,
+                            arguments = listOf(navArgument("albumId") { type = NavType.StringType }),
+                            // The album "zooms open" (pairs with the artist carousel's
+                            // tap zoom) and shrinks back on the way out.
+                            enterTransition = {
+                                scaleIn(initialScale = 0.82f, animationSpec = tween(340)) +
+                                    fadeIn(animationSpec = tween(260))
                             },
-                            onOpenFriends = { showFriends = true },
-                            onOpenStats = { navController.navigate(Routes.STATS) },
-                            onOpenSettings = {
-                                navController.navigate(Routes.SETTINGS) { launchSingleTop = true }
-                            },
-                            onOpenLibrary = { tab ->
-                                navController.navigate(Routes.library(tab))
-                            },
-                            onArtistClick = { name -> openArtist(null, name) }
-                        )
-                    }
-                }
-                composable(
-                    route = Routes.LIBRARY,
-                    arguments = listOf(navArgument("tab") { type = NavType.IntType })
-                ) { entry ->
-                    Box(modifier = Modifier.statusBarsPadding()) {
-                        LibraryScreen(
-                            client = client,
-                            player = player,
-                            initialTab = entry.arguments?.getInt("tab") ?: 0,
-                            onAlbumClick = { albumId ->
-                                navController.navigate(Routes.album(albumId))
-                            },
-                            onTrackPlayed = { navController.navigate(Routes.PLAYER) },
-                            onArtistClick = { name -> openArtist(null, name) }
-                        )
-                    }
-                }
-                composable(Routes.SEARCH) {
-                    Box(modifier = Modifier.statusBarsPadding()) {
-                        SearchScreen(
-                            client = client,
-                            player = player,
-                            onAlbumClick = { albumId ->
-                                navController.navigate(Routes.album(albumId))
-                            },
-                            onTrackPlayed = { navController.navigate(Routes.PLAYER) },
-                            onArtistClick = { name -> openArtist(null, name) },
-                            onGenreClick = { id, name -> navController.navigate(Routes.genre(id, name)) }
-                        )
-                    }
-                }
-                composable(
-                    route = Routes.GENRE,
-                    arguments = listOf(
-                        navArgument("id") { type = NavType.StringType; defaultValue = "" },
-                        navArgument("name") { type = NavType.StringType; defaultValue = "" }
-                    )
-                ) { entry ->
-                    GenreScreen(
-                        genreId = entry.arguments?.getString("id").orEmpty(),
-                        genreName = entry.arguments?.getString("name").orEmpty(),
-                        client = client,
-                        player = player,
-                        onBack = { navController.popBackStack() },
-                        onAlbumClick = { albumId -> navController.navigate(Routes.album(albumId)) },
-                        onTrackPlayed = { navController.navigate(Routes.PLAYER) }
-                    )
-                }
-                composable(Routes.SETTINGS) {
-                    Box(modifier = Modifier.statusBarsPadding()) {
-                        SettingsScreen(
-                            auth = savedAuth,
-                            authStore = authStore,
-                            crossfadeSeconds = player.crossfadeSeconds,
-                            onCrossfadeChanged = player::setCrossfade,
-                            historySyncedAtMs = player.historySyncedAtMs,
-                            historySyncError = player.historySyncError,
-                            historySyncing = player.historySyncing,
-                            onSyncHistory = player::syncHistoryNow,
-                            onBack = { navController.popBackStack() },
-                            onLoggedOut = { newServer ->
-                                // Log out closes the presence socket and stops
-                                // playback; the next sign-in reopens the socket.
-                                client.closePresence()
-                                player.stopPlayback()
-                                pendingServer = newServer
-                                auth = null
+                            popExitTransition = {
+                                scaleOut(targetScale = 0.86f, animationSpec = tween(260)) +
+                                    fadeOut(animationSpec = tween(220))
                             }
-                        )
+                        ) { entry ->
+                            val albumId = entry.arguments?.getString("albumId") ?: ""
+                            AlbumDetailScreen(
+                                albumId = albumId,
+                                client = client,
+                                player = player,
+                                onBack = { navController.popBackStack() },
+                                onTrackPlayed = { navController.navigate(Routes.PLAYER) },
+                                onArtistClick = openArtist
+                            )
+                        }
+                        composable(
+                            route = Routes.ARTIST,
+                            arguments = listOf(
+                                navArgument("id") { type = NavType.StringType; defaultValue = "" },
+                                navArgument("name") { type = NavType.StringType; defaultValue = "" }
+                            )
+                        ) { entry ->
+                            ArtistScreen(
+                                artistId = entry.arguments?.getString("id")?.ifBlank { null },
+                                artistName = entry.arguments?.getString("name")?.ifBlank { null },
+                                client = client,
+                                player = player,
+                                onBack = { navController.popBackStack() },
+                                onAlbumClick = { albumId -> navController.navigate(Routes.album(albumId)) },
+                                onTrackPlayed = { navController.navigate(Routes.PLAYER) }
+                            )
+                        }
+                        composable(Routes.PLAYER) {
+                            PlayerScreen(
+                                client = client,
+                                player = player,
+                                myUserId = savedAuth.userId,
+                                onMinimize = { navController.popBackStack() },
+                                onAlbumClick = { albumId ->
+                                    navController.navigate(Routes.album(albumId))
+                                },
+                                onArtistClick = openArtist
+                            )
+                        }
+                        composable(Routes.STATS) {
+                            StatsScreen(
+                                client = client,
+                                player = player,
+                                onBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
-                composable(
-                    route = Routes.ALBUM,
-                    arguments = listOf(navArgument("albumId") { type = NavType.StringType }),
-                    // The album "zooms open" (pairs with the artist carousel's
-                    // tap zoom) and shrinks back on the way out.
-                    enterTransition = {
-                        scaleIn(initialScale = 0.82f, animationSpec = tween(340)) +
-                            fadeIn(animationSpec = tween(260))
-                    },
-                    popExitTransition = {
-                        scaleOut(targetScale = 0.86f, animationSpec = tween(260)) +
-                            fadeOut(animationSpec = tween(220))
-                    }
-                ) { entry ->
-                    val albumId = entry.arguments?.getString("albumId") ?: ""
-                    AlbumDetailScreen(
-                        albumId = albumId,
-                        client = client,
-                        player = player,
-                        onBack = { navController.popBackStack() },
-                        onTrackPlayed = { navController.navigate(Routes.PLAYER) },
-                        onArtistClick = openArtist
-                    )
-                }
-                composable(
-                    route = Routes.ARTIST,
-                    arguments = listOf(
-                        navArgument("id") { type = NavType.StringType; defaultValue = "" },
-                        navArgument("name") { type = NavType.StringType; defaultValue = "" }
-                    )
-                ) { entry ->
-                    ArtistScreen(
-                        artistId = entry.arguments?.getString("id")?.ifBlank { null },
-                        artistName = entry.arguments?.getString("name")?.ifBlank { null },
-                        client = client,
-                        player = player,
-                        onBack = { navController.popBackStack() },
-                        onAlbumClick = { albumId -> navController.navigate(Routes.album(albumId)) },
-                        onTrackPlayed = { navController.navigate(Routes.PLAYER) }
-                    )
-                }
-                composable(Routes.PLAYER) {
-                    PlayerScreen(
-                        client = client,
-                        player = player,
-                        myUserId = savedAuth.userId,
-                        onMinimize = { navController.popBackStack() },
-                        onAlbumClick = { albumId ->
-                            navController.navigate(Routes.album(albumId))
-                        },
-                        onArtistClick = openArtist
-                    )
-                }
-                composable(Routes.STATS) {
-                    Box(modifier = Modifier.statusBarsPadding()) {
-                        StatsScreen(
-                            client = client,
-                            player = player,
-                            onBack = { navController.popBackStack() }
-                        )
-                    }
-                }
+                // Frosted strip behind the (transparent) status bar.
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .windowInsetsTopHeight(WindowInsets.statusBars)
+                        .hazeChild(state = hazeState, style = glass)
+                )
             }
         }
     }

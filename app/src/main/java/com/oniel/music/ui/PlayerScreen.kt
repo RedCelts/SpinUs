@@ -161,7 +161,7 @@ fun PlayerScreen(
     ScreenBackdrop(backdropUrl = backdropUrl, fallbackUrl = coverUrl)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 32.dp)
+        contentPadding = PaddingValues(bottom = bottomChromePadding())
     ) {
         item {
             // Top area: drag handle + cover. Dragging down here moves the

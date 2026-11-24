@@ -2,6 +2,9 @@ package com.oniel.music.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -84,9 +87,13 @@ fun StatsScreen(
         loading = false
     }
 
+    // Scrolls up under the frosted status-bar strip.
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 32.dp)
+        contentPadding = PaddingValues(
+            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+            bottom = bottomChromePadding()
+        )
     ) {
         item {
             Row(
