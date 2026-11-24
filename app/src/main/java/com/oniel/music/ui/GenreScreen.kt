@@ -246,7 +246,7 @@ fun GenreScreen(
                         AlbumCard(
                             title = album.name,
                             subtitle = album.artist,
-                            imageUrl = try { client.imageUrl(album.id, album.imageTag, 400) } catch (e: Exception) { null },
+                            imageUrl = try { client.albumArtUrl(album, 400) } catch (e: Exception) { null },
                             onClick = { onAlbumClick(album.id) },
                             cardWidth = 156.dp
                         )

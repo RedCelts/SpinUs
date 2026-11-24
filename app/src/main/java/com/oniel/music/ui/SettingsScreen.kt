@@ -112,6 +112,15 @@ fun SettingsScreen(
         Spacer(modifier = Modifier.height(24.dp))
 
         Text(
+            text = stringResource(R.string.settings_theme),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        ThemePicker(modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
             text = stringResource(R.string.settings_playback),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
@@ -191,7 +200,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.2.1"),
+            text = stringResource(R.string.settings_version, "1.3.0"),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

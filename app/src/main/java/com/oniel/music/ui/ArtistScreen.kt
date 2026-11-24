@@ -123,7 +123,7 @@ fun ArtistScreen(
             BackdropHeader(
                 backdropUrl = client.backdropFor(current),
                 fallbackUrl = photoUrl ?: albums.firstOrNull()?.let {
-                    try { client.imageUrl(it.id, it.imageTag, 600) } catch (e: Exception) { null }
+                    try { client.albumArtUrl(it, 600) } catch (e: Exception) { null }
                 },
                 height = 320.dp
             ) {
@@ -360,7 +360,7 @@ fun AlbumCarousel(
                 }
         ) {
             CoverImage(
-                url = try { client.imageUrl(album.id, album.imageTag, 600) } catch (e: Exception) { null },
+                url = try { client.albumArtUrl(album, 600) } catch (e: Exception) { null },
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)

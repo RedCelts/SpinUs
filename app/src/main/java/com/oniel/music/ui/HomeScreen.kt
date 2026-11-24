@@ -364,7 +364,7 @@ fun HomeScreen(
                                     client.artistImageUrl(it, 300)
                                 },
                                 fallbackUrl = station.coverAlbum?.let {
-                                    client.imageUrl(it.id, it.imageTag, 300)
+                                    client.albumArtUrl(it, 300)
                                 },
                                 onClick = {
                                     val artistTracks = allTracks.filter {
@@ -397,7 +397,7 @@ fun HomeScreen(
                                 title = stringResource(R.string.mix_title, station.name),
                                 subtitle = stringResource(R.string.mix_subtitle),
                                 imageUrl = station.coverAlbum?.let {
-                                    client.imageUrl(it.id, it.imageTag, 300)
+                                    client.albumArtUrl(it, 300)
                                 },
                                 onClick = {
                                     val artistTracks = allTracks.filter {
@@ -482,7 +482,7 @@ private fun AlbumShelf(
             AlbumCard(
                 title = album.name,
                 subtitle = album.artist,
-                imageUrl = client.imageUrl(album.id, album.imageTag, 300),
+                imageUrl = client.albumArtUrl(album, 300),
                 onClick = { onAlbumClick(album.id) }
             )
         }

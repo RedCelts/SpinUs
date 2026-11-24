@@ -79,7 +79,15 @@ fun AlbumDetailScreen(
     }
 
     val current = details
-    val coverUrl = try { client.imageUrl(albumId, current?.primaryImageTag, 600) } catch (e: Exception) { null }
+    // No album cover → the artist's picture.
+    val artistPicture = current?.artistId?.let {
+        try { client.artistImageUrl(it, 600) } catch (e: Exception) { null }
+    }
+    val coverUrl = if (current != null && current.primaryImageTag == null && artistPicture != null) {
+        artistPicture
+    } else {
+        try { client.imageUrl(albumId, current?.primaryImageTag, 600) } catch (e: Exception) { null }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -112,7 +120,8 @@ fun AlbumDetailScreen(
                         .padding(bottom = 8.dp)
                         .size(200.dp),
                     cornerDp = 12.dp,
-                    contentDescription = current?.name
+                    contentDescription = current?.name,
+                    fallbackUrl = artistPicture
                 )
             }
         }

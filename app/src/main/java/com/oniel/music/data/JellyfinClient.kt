@@ -44,7 +44,7 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.2.1"
+        const val CLIENT_VERSION = "1.3.0"
         /** Track ids per playlist request (keeps the URL short). */
         private const val PLAYLIST_CHUNK = 100
         /**
@@ -678,11 +678,24 @@ class JellyfinClient(
      */
     fun trackArtUrl(track: Track, width: Int = 300): String {
         val albumId = track.albumId
-        if (albumId != null) return imageUrl(albumId, track.imageTag, width)
         val artistId = track.artistId
+        // Album has a cover → use it; no album or no cover → artist picture.
+        if (albumId != null && track.imageTag != null) return imageUrl(albumId, track.imageTag, width)
         if (artistId != null) return imageUrl(artistId, null, width)
+        if (albumId != null) return imageUrl(albumId, null, width)
         return imageUrl(track.id, track.imageTag, width)
     }
+
+    /** An album's cover, or the album artist's picture when it has none. */
+    fun albumArtUrl(album: Album, width: Int = 300): String {
+        val artistId = album.artistId
+        return if (album.imageTag == null && artistId != null) imageUrl(artistId, null, width)
+        else imageUrl(album.id, album.imageTag, width)
+    }
+
+    /** Second try for an album cover that fails to load: the artist's picture. */
+    fun albumArtFallback(album: Album, width: Int = 300): String? =
+        album.artistId?.let { imageUrl(it, null, width) }
 
     /** An artist's own picture (404s, and so falls back, when there is none). */
     fun artistImageUrl(artistId: String, width: Int = 300): String = imageUrl(artistId, null, width)

@@ -179,7 +179,7 @@ private fun AlbumsSection(
             AlbumCard(
                 title = album.name,
                 subtitle = album.artist,
-                imageUrl = client.imageUrl(album.id, album.imageTag, 300),
+                imageUrl = client.albumArtUrl(album, 300),
                 onClick = { onAlbumClick(album.id) },
                 modifier = Modifier.padding(6.dp)
             )

@@ -35,6 +35,8 @@ class MainActivity : ComponentActivity() {
             window.isStatusBarContrastEnforced = false
         }
         CrashLog.install(this)
+        // The saved theme, read before the first frame (no flash).
+        com.oniel.music.ui.theme.ThemeState.load(this)
         // Debug builds: `am start ... --ez ts_enable true` turns built-in
         // Tailscale on (used by the CI emulator smoke test).
         if ((applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0 &&

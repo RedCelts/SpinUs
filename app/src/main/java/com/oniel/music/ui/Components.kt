@@ -290,8 +290,9 @@ fun ShuffleGlyph(
     color: Color = MaterialTheme.colorScheme.onSurface,
     active: Boolean = false
 ) {
+    val accent = MaterialTheme.colorScheme.tertiary
     Canvas(modifier = modifier) {
-        val c = if (active) Color(0xFFC77F0A) else color
+        val c = if (active) accent else color
         val stroke = Stroke(width = size.minDimension * 0.09f)
         val w = size.width
         val h = size.height
@@ -323,9 +324,10 @@ fun RepeatGlyph(
     active: Boolean = false,
     repeatOne: Boolean = false
 ) {
+    val accent = MaterialTheme.colorScheme.tertiary
     Box(modifier = modifier) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val c = if (active) Color(0xFFC77F0A) else color
+            val c = if (active) accent else color
             val stroke = Stroke(width = size.minDimension * 0.10f)
             val w = size.width
             val h = size.height
@@ -352,7 +354,7 @@ fun RepeatGlyph(
                 text = "1",
                 fontSize = 9.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFC77F0A),
+                color = accent,
                 modifier = Modifier.align(Alignment.Center)
             )
         }

@@ -139,7 +139,7 @@ fun YouMightEnjoyRow(
         items(picks) { pick ->
             when (pick) {
                 is Pick.AlbumPick -> RecCard(
-                    imageUrl = client.imageUrl(pick.album.id, pick.album.imageTag, 300),
+                    imageUrl = client.albumArtUrl(pick.album, 300),
                     title = pick.album.name,
                     line2 = pick.album.artist,
                     reason = pick.reason,
@@ -149,7 +149,7 @@ fun YouMightEnjoyRow(
                     // Artists are always round, with their own picture
                     // (album cover only if the artist has none).
                     imageUrl = pick.coverAlbum?.artistId?.let { client.artistImageUrl(it, 300) },
-                    fallbackUrl = pick.coverAlbum?.let { client.imageUrl(it.id, it.imageTag, 300) },
+                    fallbackUrl = pick.coverAlbum?.let { client.albumArtUrl(it, 300) },
                     title = pick.name,
                     line2 = stringResource(R.string.rec_artist),
                     reason = pick.reason,

@@ -629,3 +629,20 @@ the v1.2 script.)
 ## v1.2.1 — Top 50 per genre (2026-11-24)
 - Genre pages list the genre's current top 50 (`/chart/{id}/tracks?limit=50`),
   titled "Top 50 right now". Charts are fetched fresh on every open.
+
+## v1.3.0 — Themes + artist picture for coverless albums (2026-11-24)
+- Settings → Theme: 15 themes (Classic, Modern, Arcade, Space, Geek, 3D,
+  Neon, Hippy, Goth, Angelic, Rustic, Nature, Ocean, Sunset, Midnight),
+  each a live mini preview. A theme = colour scheme (built by `scheme()`
+  from a few brand colours, light or dark), heading/body fonts (Android
+  system families: monospace, serif, casual, cursive, condensed, black…),
+  corner radius (Material shapes), heading letter spacing and a backdrop
+  (`ThemeBackdrop`: starfield, scanlines + synthwave floor, terminal grid,
+  depth floor, neon glows, flowers, gothic vignette, halo rays, wood
+  grain, leaves, waves, sun). The backdrop sits inside the haze source,
+  so the frosted bars blur it too. Choice saved in SharedPreferences
+  (`ThemeState`, read before the first frame); status/nav bar icons
+  follow light/dark. Shuffle/repeat accents use the theme's tertiary.
+- Albums without a cover show the album artist's picture
+  (`albumArtUrl` / album page header); tracks whose album has no cover
+  use the artist picture too (`trackArtUrl`).
