@@ -625,3 +625,7 @@ the v1.2 script.)
   from library genres matched by `GenreMatch` (aliases, e.g. Christian ←
   gospel/worship/alabanza/adoración; Latin ← reggaeton/bachata/salsa…).
 - Removed the Deezer and YouTube buttons from the recommendation dialog.
+
+## v1.2.1 — Top 50 per genre (2026-11-24)
+- Genre pages list the genre's current top 50 (`/chart/{id}/tracks?limit=50`),
+  titled "Top 50 right now". Charts are fetched fresh on every open.

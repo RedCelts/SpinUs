@@ -171,9 +171,9 @@ fun GenreScreen(
             return@LazyColumn
         }
 
-        // ---- Top songs (all of them, owned or not) ----
+        // ---- Top 50 right now (all of them, owned or not) ----
         if (topSongs.isNotEmpty()) {
-            item { SectionTitle(stringResource(R.string.top_songs)) }
+            item { SectionTitle(stringResource(R.string.genre_top_50)) }
             itemsIndexed(topSongs, key = { _, t -> "dz${t.id}" }) { index, dz ->
                 val mine = owned[dz.id]
                 TopSongRow(

@@ -89,7 +89,7 @@ class DeezerClient(private val http: OkHttpClient) {
     }
 
     /** The genre's chart: its top songs right now, most popular first. */
-    suspend fun genreTopTracks(genreId: Long, limit: Int = 25): List<DzTrack> =
+    suspend fun genreTopTracks(genreId: Long, limit: Int = 50): List<DzTrack> =
         get("/chart/$genreId/tracks?limit=$limit").optJSONArray("data")
             ?.objects()?.map { it.toTrack() }.orEmpty()
 
