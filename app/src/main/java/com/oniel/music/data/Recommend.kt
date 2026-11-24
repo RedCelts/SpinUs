@@ -160,8 +160,13 @@ object YouMightEnjoy {
 data class DzArtist(val id: Long, val name: String, val pictureUrl: String?, val fans: Long = 0)
 data class DzTrack(
     val id: Long, val title: String, val artist: String, val album: String,
-    val coverUrl: String?, val link: String?, val durationSec: Int = 0
+    val coverUrl: String?, val link: String?, val durationSec: Int = 0,
+    /** 30-second preview (expires after a few hours; refetch on failure). */
+    val previewUrl: String? = null
 )
+
+/** One of Deezer's main genres (Pop, Latin, Christian, …). */
+data class DzGenre(val id: Long, val name: String, val pictureUrl: String?)
 data class DzAlbum(
     val id: Long, val title: String, val artist: String, val coverUrl: String?,
     val link: String?, val releaseDate: String?, val recordType: String?

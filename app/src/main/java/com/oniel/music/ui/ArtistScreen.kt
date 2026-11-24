@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -257,6 +258,28 @@ fun ArtistScreen(
                     client = client,
                     onAlbumClick = onAlbumClick
                 )
+            }
+        }
+
+        // Songs with no album: this artist's singles (artist picture as cover).
+        val singles = tracks.filter { it.albumId == null }
+        if (singles.isNotEmpty()) {
+            item { SectionTitle(stringResource(R.string.artist_singles)) }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    itemsIndexed(singles, key = { _, t -> t.id }) { index, single ->
+                        AlbumCard(
+                            title = single.title,
+                            subtitle = stringResource(R.string.artist_singles_label),
+                            imageUrl = try { client.trackArtUrl(single, 300) } catch (e: Exception) { null },
+                            onClick = { player.play(singles, index); onTrackPlayed() },
+                            cardWidth = 140.dp
+                        )
+                    }
+                }
             }
         }
     }

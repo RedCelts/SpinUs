@@ -175,4 +175,11 @@
     <string name="playlist_create">Create</string>
     <string name="browse_genres">Browse all</string>
     <string name="genre_empty">Nothing in this genre yet.</string>
+    <!-- v1.2.0 -->
+    <string name="genre_your_albums">Your albums</string>
+    <string name="genre_in_library">In library</string>
+    <string name="genre_preview">30s</string>
+    <string name="genre_no_preview">No preview</string>
+    <string name="artist_singles">Singles</string>
+    <string name="artist_singles_label">Single</string>
 </resources>

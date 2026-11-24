@@ -222,7 +222,7 @@ fun AdditionsRow(
 
 /**
  * Details for a suggestion outside the library: 30-second preview
- * (pauses your music while it plays), open on Deezer, search on YouTube.
+ * (pauses your music while it plays).
  */
 @Composable
 fun AdditionDialog(
@@ -331,27 +331,6 @@ fun AdditionDialog(
                             }
                         )
                     )
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    OutlinedButton(
-                        onClick = {
-                            addition.link?.let {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(it)))
-                            }
-                        },
-                        enabled = addition.link != null,
-                        modifier = Modifier.weight(1f)
-                    ) { Text(stringResource(R.string.rec_open_deezer)) }
-                    OutlinedButton(
-                        onClick = {
-                            val q = Uri.encode("${addition.artist} ${addition.title}")
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse("https://www.youtube.com/results?search_query=$q"))
-                            )
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text(stringResource(R.string.rec_youtube)) }
                 }
             }
         },

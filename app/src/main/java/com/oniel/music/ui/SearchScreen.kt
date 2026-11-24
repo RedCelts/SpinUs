@@ -17,7 +17,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
-import com.oniel.music.data.Genre
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -72,14 +71,35 @@ fun SearchScreen(
     onAlbumClick: (String) -> Unit,
     onTrackPlayed: () -> Unit,
     onArtistClick: (String) -> Unit = {},
-    onGenreClick: (id: String, name: String) -> Unit = { _, _ -> }
+    /** A Browse tile: a Deezer main genre (dzId) or, offline, a library genre (jfId). */
+    onGenreClick: (jfId: String?, dzId: Long?, name: String) -> Unit = { _, _, _ -> }
 ) {
     var query by rememberSaveable { mutableStateOf("") }
-    var genres by remember { mutableStateOf<List<Genre>?>(null) }
+    var genres by remember { mutableStateOf<List<BrowseGenre>?>(null) }
 
     // Genres to browse before typing (loaded once per visit).
     LaunchedEffect(Unit) {
-        genres = try { client.getMusicGenres() } catch (e: Exception) { emptyList() }
+        // Main categories only (Deezer's ~25 genres); the library's own
+        // genre tags are the fallback when Deezer can't be reached.
+        val main = try { sharedDeezer.mainGenres() } catch (e: Exception) { emptyList() }
+        genres = if (main.isNotEmpty()) {
+            main.map { BrowseGenre(it.name, it.pictureUrl, dzId = it.id, jfId = null) }
+        } else {
+            try {
+                client.getMusicGenres().map { g ->
+                    BrowseGenre(
+                        g.name,
+                        g.imageTag?.let { tag ->
+                            try { client.imageUrl(g.id, tag, 200) } catch (e: Exception) { null }
+                        },
+                        dzId = null,
+                        jfId = g.id
+                    )
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
     }
     var searching by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<Track>?>(null) }
@@ -285,9 +305,9 @@ fun SearchScreen(
  */
 @Composable
 private fun GenreBrowser(
-    genres: List<Genre>?,
+    genres: List<BrowseGenre>?,
     client: JellyfinClient,
-    onGenreClick: (id: String, name: String) -> Unit
+    onGenreClick: (jfId: String?, dzId: Long?, name: String) -> Unit
 ) {
     when {
         genres == null -> Box(
@@ -319,18 +339,24 @@ private fun GenreBrowser(
                     modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
                 )
             }
-            items(genres, key = { it.id }) { genre ->
+            items(genres, key = { "${it.dzId}|${it.jfId}|${it.name}" }) { genre ->
                 GenreTile(
                     name = genre.name,
-                    imageUrl = genre.imageTag?.let {
-                        try { client.imageUrl(genre.id, it, 200) } catch (e: Exception) { null }
-                    },
-                    onClick = { onGenreClick(genre.id, genre.name) }
+                    imageUrl = genre.imageUrl,
+                    onClick = { onGenreClick(genre.jfId, genre.dzId, genre.name) }
                 )
             }
         }
     }
 }
+
+/** A tile in Browse all. */
+data class BrowseGenre(
+    val name: String,
+    val imageUrl: String?,
+    val dzId: Long?,
+    val jfId: String?
+)
 
 @Composable
 fun GenreTile(

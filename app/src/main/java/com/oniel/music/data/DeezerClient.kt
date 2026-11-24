@@ -11,8 +11,9 @@ import java.io.IOException
 import java.net.URLEncoder
 
 /**
- * Deezer's public catalog API (no account, no key): used only for
- * "Recommended additions" — music that is NOT in the Jellyfin library.
+ * Deezer's public catalog API (no account, no key): used for
+ * "Recommended additions" (music NOT in the Jellyfin library) and for the
+ * main genres + their top songs in Search's "Browse all".
  * https://api.deezer.com — search, related artists, top tracks, albums.
  * Deezer allows ~50 requests / 5 s; calls here are sequential and spaced.
  */
@@ -71,6 +72,31 @@ class DeezerClient(private val http: OkHttpClient) {
             ?.optJSONObject(0)?.optString("preview")?.ifBlank { null }
     }
 
+    /**
+     * Deezer's main genres (about two dozen), without "All". Kept for the
+     * app's lifetime: they almost never change.
+     */
+    suspend fun mainGenres(): List<DzGenre> {
+        cachedGenres?.let { return it }
+        val list = get("/genre").optJSONArray("data")?.objects()?.mapNotNull { g ->
+            val id = g.optLong("id")
+            val name = g.optString("name")
+            if (id == 0L || name.isBlank()) null
+            else DzGenre(id, name, g.optString("picture_medium").ifBlank { null })
+        }.orEmpty()
+        if (list.isNotEmpty()) cachedGenres = list
+        return list
+    }
+
+    /** The genre's chart: its top songs right now, most popular first. */
+    suspend fun genreTopTracks(genreId: Long, limit: Int = 25): List<DzTrack> =
+        get("/chart/$genreId/tracks?limit=$limit").optJSONArray("data")
+            ?.objects()?.map { it.toTrack() }.orEmpty()
+
+    /** A fresh preview URL for one Deezer track (old ones expire). */
+    suspend fun trackPreview(trackId: Long): String? =
+        get("/track/$trackId").optString("preview").ifBlank { null }
+
     private fun JSONObject.toArtist() = DzArtist(
         id = optLong("id"),
         name = optString("name"),
@@ -85,7 +111,8 @@ class DeezerClient(private val http: OkHttpClient) {
         album = optJSONObject("album")?.optString("title").orEmpty(),
         coverUrl = optJSONObject("album")?.optString("cover_medium")?.ifBlank { null },
         link = optString("link").ifBlank { null },
-        durationSec = optInt("duration")
+        durationSec = optInt("duration"),
+        previewUrl = optString("preview").ifBlank { null }
     )
 
     private fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }
@@ -93,5 +120,8 @@ class DeezerClient(private val http: OkHttpClient) {
     companion object {
         private const val BASE = "https://api.deezer.com"
         private const val SPACING_MS = 120L
+
+        @Volatile
+        private var cachedGenres: List<DzGenre>? = null
     }
 }

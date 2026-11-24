@@ -66,12 +66,13 @@ private object Routes {
     const val PLAYER = "player"
     const val STATS = "stats"
     const val ARTIST = "artist?id={id}&name={name}"
-    const val GENRE = "genre?id={id}&name={name}"
+    const val GENRE = "genre?id={id}&dz={dz}&name={name}"
 
     fun library(tab: Int) = "library/$tab"
     fun album(albumId: String) = "album/$albumId"
-    fun genre(id: String, name: String) =
-        "genre?id=${android.net.Uri.encode(id)}&name=${android.net.Uri.encode(name)}"
+    /** A Browse genre: a library genre id and/or a Deezer main-genre id. */
+    fun genre(id: String?, dzId: Long?, name: String) =
+        "genre?id=${android.net.Uri.encode(id.orEmpty())}&dz=${dzId ?: -1L}&name=${android.net.Uri.encode(name)}"
     fun artist(id: String?, name: String) =
         "artist?id=${android.net.Uri.encode(id.orEmpty())}&name=${android.net.Uri.encode(name)}"
 }
@@ -309,18 +310,20 @@ fun OnielMusicApp() {
                                 },
                                 onTrackPlayed = { navController.navigate(Routes.PLAYER) },
                                 onArtistClick = { name -> openArtist(null, name) },
-                                onGenreClick = { id, name -> navController.navigate(Routes.genre(id, name)) }
+                                onGenreClick = { id, dzId, name -> navController.navigate(Routes.genre(id, dzId, name)) }
                             )
                         }
                         composable(
                             route = Routes.GENRE,
                             arguments = listOf(
                                 navArgument("id") { type = NavType.StringType; defaultValue = "" },
+                                navArgument("dz") { type = NavType.LongType; defaultValue = -1L },
                                 navArgument("name") { type = NavType.StringType; defaultValue = "" }
                             )
                         ) { entry ->
                             GenreScreen(
-                                genreId = entry.arguments?.getString("id").orEmpty(),
+                                genreId = entry.arguments?.getString("id")?.ifBlank { null },
+                                deezerGenreId = entry.arguments?.getLong("dz")?.takeIf { it >= 0L },
                                 genreName = entry.arguments?.getString("name").orEmpty(),
                                 client = client,
                                 player = player,

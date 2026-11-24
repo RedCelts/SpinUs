@@ -611,3 +611,17 @@ the v1.2 script.)
   `bottomChromePadding()` (`LocalBottomChrome` = measured bottom chrome
   + 16 dp) so content scrolls under the bar. Home, Stats and Settings
   also scroll under the status strip; Library/Search keep fixed headers.
+
+## v1.2.0 — Singles, main-genre browse with top songs, no outside links (2026-11-24)
+- Artist page: songs with no album show in a "Singles" shelf (artist
+  picture as the cover); tap plays the singles from that one.
+- Search → Browse all shows Deezer's main genres only (`/genre`, cached
+  for the app's life; library genre tags remain the offline fallback).
+- Genre page: "Top songs" first — the genre chart (`/chart/{id}/tracks`,
+  25). Songs you own (artist + title via `LibraryIndex`, one full-library
+  read cached 10 min) show "In library" and play your copy; the rest play
+  a 30-second preview (`PreviewPlayer`: pauses your music, one at a time,
+  refetches an expired preview once). Then Play/Shuffle and "Your albums"
+  from library genres matched by `GenreMatch` (aliases, e.g. Christian ←
+  gospel/worship/alabanza/adoración; Latin ← reggaeton/bachata/salsa…).
+- Removed the Deezer and YouTube buttons from the recommendation dialog.
