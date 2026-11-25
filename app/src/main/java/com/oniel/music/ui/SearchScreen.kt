@@ -1,6 +1,12 @@
 package com.oniel.music.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.runtime.rememberCoroutineScope
+import com.oniel.music.data.Playlist
+import com.oniel.music.data.SearchResults
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,6 +81,7 @@ fun SearchScreen(
     onGenreClick: (jfId: String?, dzId: Long?, name: String) -> Unit = { _, _, _ -> }
 ) {
     var query by rememberSaveable { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
     var genres by remember { mutableStateOf<List<BrowseGenre>?>(null) }
 
     // Genres to browse before typing (loaded once per visit).
@@ -102,7 +109,7 @@ fun SearchScreen(
         }
     }
     var searching by remember { mutableStateOf(false) }
-    var results by remember { mutableStateOf<List<Track>?>(null) }
+    var results by remember { mutableStateOf<SearchResults?>(null) }
 
     LaunchedEffect(query) {
         if (query.isBlank()) {
@@ -113,7 +120,7 @@ fun SearchScreen(
         searching = true
         delay(400)
         try {
-            results = client.search(query.trim())
+            results = client.searchAll(query.trim())
         } catch (e: Exception) {
             results = null
         } finally {
@@ -169,7 +176,7 @@ fun SearchScreen(
                 CircularProgressIndicator(modifier = Modifier.padding(end = 12.dp))
                 Text(stringResource(R.string.searching))
             }
-        } else if (found == null) {
+        } else if (found == null || (found.isEmpty && query.isNotBlank())) {
             if (query.isBlank()) {
                 GenreBrowser(
                     genres = genres,
@@ -185,110 +192,108 @@ fun SearchScreen(
                 )
             }
         } else {
-            val artists = found
-                .flatMap { it.artists.ifEmpty { listOf(it.albumArtist) } }
-                .filter { it.isNotBlank() }
-                .distinct()
-            val albums = found
-                .filter { it.albumId != null }
-                .distinctBy { it.albumId }
+            val tracks = found.tracks
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = bottomChromePadding())
             ) {
-                if (artists.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = stringResource(R.string.search_artists),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
-                        )
-                    }
-                    items(artists) { artist ->
+                if (found.artists.isNotEmpty()) {
+                    item { SearchSection(stringResource(R.string.search_artists)) }
+                    items(found.artists, key = { "ar${it.id}" }) { artist ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onArtistClick(artist) }
+                                .clickable { onArtistClick(artist.name) }
                                 .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            ListenerAvatar(userName = artist, sizeDp = 44.dp)
+                            if (artist.imageTag != null) {
+                                CoverImage(
+                                    url = try { client.imageUrl(artist.id, artist.imageTag, 200) } catch (e: Exception) { null },
+                                    modifier = Modifier.size(44.dp),
+                                    cornerDp = 22.dp,
+                                    contentDescription = artist.name
+                                )
+                            } else {
+                                ListenerAvatar(userName = artist.name, sizeDp = 44.dp)
+                            }
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = artist,
+                                text = artist.name,
                                 style = MaterialTheme.typography.bodyLarge,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f)
                             )
-                            ItemMoreButton(target = ActionTarget.ArtistItem(null, artist))
+                            ItemMoreButton(target = ActionTarget.ArtistItem(artist.id, artist.name))
                         }
                     }
                 }
-                if (albums.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = stringResource(R.string.search_albums),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
-                        )
-                    }
-                    items(albums) { track ->
-                        val albumId = track.albumId ?: return@items
+                if (found.albums.isNotEmpty()) {
+                    item { SearchSection(stringResource(R.string.search_albums)) }
+                    items(found.albums, key = { "al${it.id}" }) { album ->
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { onAlbumClick(albumId) }
+                                .clickable { onAlbumClick(album.id) }
                                 .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             CoverImage(
-                                url = client.imageUrl(albumId, track.imageTag, 200),
+                                url = try { client.albumArtUrl(album, 200) } catch (e: Exception) { null },
                                 modifier = Modifier
                                     .padding(end = 12.dp)
-                                    .width(48.dp)
-                                    .height(48.dp),
-                                cornerDp = 6.dp
+                                    .size(48.dp),
+                                cornerDp = 6.dp,
+                                fallbackUrl = try { client.albumArtFallback(album, 200) } catch (e: Exception) { null }
                             )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = track.album,
+                                    text = album.name,
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = track.albumArtist,
+                                    text = album.artist,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
                             }
-                            ItemMoreButton(target = ActionTarget.AlbumItem(albumId, track.album))
+                            ItemMoreButton(target = ActionTarget.AlbumItem(album.id, album.name))
                         }
                     }
                 }
-                if (found.isNotEmpty()) {
-                    item {
-                        Text(
-                            text = stringResource(R.string.search_tracks),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
-                        )
-                    }
-                    itemsIndexed(found) { index, track ->
+                if (tracks.isNotEmpty()) {
+                    item { SearchSection(stringResource(R.string.search_tracks)) }
+                    itemsIndexed(tracks, key = { _, t -> "tr${t.id}" }) { index, track ->
                         TrackRow(
                             number = null,
                             track = track,
                             isCurrent = player.currentTrack?.id == track.id,
                             onClick = {
-                                player.play(found, index)
+                                player.play(tracks, index)
                                 onTrackPlayed()
+                            }
+                        )
+                    }
+                }
+                if (found.playlists.isNotEmpty()) {
+                    item { SearchSection(stringResource(R.string.search_playlists)) }
+                    items(found.playlists, key = { "pl${it.id}" }) { playlist ->
+                        PlaylistHitRow(
+                            playlist = playlist,
+                            onPlay = {
+                                scope.launch {
+                                    val songs = try { client.getPlaylistTracks(playlist.id) } catch (e: Exception) { emptyList() }
+                                    if (songs.isNotEmpty()) {
+                                        player.play(songs, 0)
+                                        onTrackPlayed()
+                                    }
+                                }
                             }
                         )
                     }
@@ -408,3 +413,59 @@ private val GenrePalette = listOf(
 
 fun genreColorFor(name: String): Color =
     GenrePalette[(name.lowercase().hashCode() and Int.MAX_VALUE) % GenrePalette.size]
+
+@Composable
+private fun SearchSection(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp)
+    )
+}
+
+/** A matching playlist: tap to play it from the start. */
+@Composable
+private fun PlaylistHitRow(playlist: Playlist, onPlay: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPlay)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.List,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = playlist.name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = stringResource(R.string.playlist_count, playlist.itemCount),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            imageVector = Icons.Filled.PlayArrow,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.tertiary
+        )
+    }
+}

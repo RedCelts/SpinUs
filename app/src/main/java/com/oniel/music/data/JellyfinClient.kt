@@ -1,5 +1,7 @@
 package com.oniel.music.data
 
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -44,7 +46,7 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.3.3"
+        const val CLIENT_VERSION = "1.3.4"
         /** Track ids per playlist request (keeps the URL short). */
         private const val PLAYLIST_CHUNK = 100
         /**
@@ -340,6 +342,93 @@ class JellyfinClient(
                 imageTag = hint.optStringOrNull("AlbumPrimaryImageTag")
             )
         }
+    }
+
+    /**
+     * Search everything at once: artists, albums, songs (by title, plus the
+     * songs of the best-matching artists) and playlists. Each part runs in
+     * parallel and fails on its own, so one bad query never blanks the rest.
+     */
+    suspend fun searchAll(query: String): SearchResults = coroutineScope {
+        val uid = requireUserId()
+        val q = URLEncoder.encode(query, "UTF-8")
+        val trackFields = "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks,UserData,PremiereDate"
+
+        val artistsJob = async {
+            try {
+                val json = getJson("/Artists?SearchTerm=$q&UserId=$uid&Recursive=true&Limit=20", "search artists")
+                val items = json.optJSONArray("Items")
+                (0 until (items?.length() ?: 0)).mapNotNull { i ->
+                    val item = items!!.optJSONObject(i) ?: return@mapNotNull null
+                    val name = item.optString("Name", "")
+                    if (name.isBlank()) null
+                    else ArtistHit(
+                        id = item.getString("Id"),
+                        name = name,
+                        imageTag = item.optJSONObject("ImageTags")?.optStringOrNull("Primary")
+                    )
+                }
+            } catch (e: Exception) { emptyList() }
+        }
+        val albumsJob = async {
+            try {
+                getItems(
+                    "IncludeItemTypes=MusicAlbum&Recursive=true&SearchTerm=$q&Limit=30" +
+                        "&Fields=DateCreated,PremiereDate,UserData"
+                ).optJSONArray("Items")?.toAlbumList().orEmpty()
+            } catch (e: Exception) { emptyList() }
+        }
+        val songsJob = async {
+            try {
+                getItems("IncludeItemTypes=Audio&Recursive=true&SearchTerm=$q&Limit=60$trackFields")
+                    .optJSONArray("Items")?.toTrackList().orEmpty()
+            } catch (e: Exception) { emptyList() }
+        }
+        val hintsJob = async { try { search(query) } catch (e: Exception) { emptyList() } }
+        val playlistsJob = async {
+            try {
+                val items = getItems("IncludeItemTypes=Playlist&Recursive=true&SearchTerm=$q&Limit=20")
+                    .optJSONArray("Items")
+                (0 until (items?.length() ?: 0)).map { i ->
+                    val item = items!!.getJSONObject(i)
+                    Playlist(
+                        id = item.getString("Id"),
+                        name = item.optString("Name", ""),
+                        itemCount = item.optInt("ChildCount", 0)
+                    )
+                }
+            } catch (e: Exception) { emptyList() }
+        }
+
+        val artists = artistsJob.await()
+        // Songs by the two best-matching artists, so typing an artist's
+        // name also lists their songs.
+        val byArtist = if (artists.isEmpty()) emptyList() else try {
+            getItems(
+                "IncludeItemTypes=Audio&Recursive=true&ArtistIds=${artists.take(2).joinToString(",") { it.id }}" +
+                    "&SortBy=PlayCount,SortName&SortOrder=Descending&Limit=30$trackFields"
+            ).optJSONArray("Items")?.toTrackList().orEmpty()
+        } catch (e: Exception) { emptyList() }
+
+        val tracks = LinkedHashMap<String, Track>()
+        (songsJob.await() + hintsJob.await() + byArtist).forEach { tracks.putIfAbsent(it.id, it) }
+        SearchResults(
+            artists = artists,
+            albums = albumsJob.await(),
+            tracks = tracks.values.toList(),
+            playlists = playlistsJob.await()
+        )
+    }
+
+    /** A playlist's songs, in playlist order. */
+    suspend fun getPlaylistTracks(playlistId: String): List<Track> {
+        val uid = requireUserId()
+        val json = getJson(
+            "/Playlists/$playlistId/Items?userId=$uid" +
+                "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks,UserData,PremiereDate",
+            "playlist"
+        )
+        return json.optJSONArray("Items")?.toTrackList().orEmpty()
     }
 
     // ---- Genres (v1.1.0) ----

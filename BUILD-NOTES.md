@@ -674,3 +674,11 @@ the v1.2 script.)
   next one down. Placeholder photos (empty hash) are ignored; with no
   photos at all it falls back to the top covers.
 - Removed the status-bar glass strip: the status bar is 100% see-through.
+
+## v1.3.4 — Search everything (2026-11-24)
+- Search used to be song-only (`/Search/Hints` Audio; artists/albums were
+  derived from those songs). `searchAll` now runs in parallel: artists
+  (`/Artists?SearchTerm`, with photos), albums, songs by title + the hint
+  results + the songs of the two best-matching artists, and playlists.
+  Each part fails on its own. Sections: Artists, Albums, Songs, Playlists
+  (tap a playlist to play it; `getPlaylistTracks`).

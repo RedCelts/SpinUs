@@ -146,3 +146,17 @@ data class Genre(
     val name: String,
     val imageTag: String?
 )
+
+/** An artist found by search. */
+data class ArtistHit(val id: String, val name: String, val imageTag: String?)
+
+/** Everything a search matched: artists, albums, songs and playlists. */
+data class SearchResults(
+    val artists: List<ArtistHit>,
+    val albums: List<Album>,
+    val tracks: List<Track>,
+    val playlists: List<Playlist>
+) {
+    val isEmpty: Boolean
+        get() = artists.isEmpty() && albums.isEmpty() && tracks.isEmpty() && playlists.isEmpty()
+}
