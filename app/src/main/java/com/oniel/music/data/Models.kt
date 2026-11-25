@@ -28,7 +28,11 @@ data class Track(
     /** Track number on its disc (IndexNumber), null when untagged. */
     val indexNumber: Int? = null,
     /** Disc number (ParentIndexNumber), null when untagged. */
-    val discNumber: Int? = null
+    val discNumber: Int? = null,
+    /** Genre tags (for mixes / stations); empty when not requested. */
+    val genres: List<String> = emptyList(),
+    /** Release year (ProductionYear), null when unknown. */
+    val year: Int? = null
 )
 
 /** One music album in the library. */

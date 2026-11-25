@@ -206,4 +206,5 @@
     <string name="close">Close</string>
     <string name="settings_share_stats">Share my listening stats with friends</string>
     <string name="settings_share_stats_desc">Friends on this server can open your stats from their Friends list while your app is open.</string>
+    <string name="mix_song_count">%1$d songs</string>
 </resources>

@@ -122,6 +122,25 @@ class PlayerController(application: Application) : AndroidViewModel(application)
     private var listenedMs = 0L
     private var listenedTrackId: String? = null
     private var lastTickAt = 0L
+    private var listenedDurationMs = 0L
+    /** How plays end (skips < 20 s, completion) — feeds the Home rules. */
+    private val listenSignals = com.oniel.music.data.ListenSignals(File(application.filesDir, "signals"))
+
+    /** Records how the song that was playing ended (skip / how much was heard). */
+    private fun finishListen() {
+        val id = listenedTrackId ?: return
+        val heard = listenedMs
+        val total = listenedDurationMs
+        listenedTrackId = null
+        if (heard <= 0L) return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try { listenSignals.record(id, heard, total) } catch (e: Exception) { }
+        }
+    }
+
+    /** Skip / completion data for the recommendation rules. */
+    suspend fun signalSnapshot(): com.oniel.music.data.SignalSnapshot =
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { listenSignals.snapshot() }
     private var lastProgressReportMs: Long = 0L
 
     private val playerListener = object : Player.Listener {
@@ -175,7 +194,9 @@ class PlayerController(application: Application) : AndroidViewModel(application)
                     val nowTick = android.os.SystemClock.elapsedRealtime()
                     val playingId = currentTrack?.id
                     if (playingId != listenedTrackId) {
+                        finishListen()
                         listenedTrackId = playingId
+                        listenedDurationMs = ticksToMs(currentTrack?.runTimeTicks ?: 0L)
                         listenedMs = 0L
                     } else if (lastTickAt > 0L) {
                         listenedMs += (nowTick - lastTickAt).coerceIn(0L, 2_000L)
@@ -348,7 +369,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         queue = tracks
         currentIndex = startIndex.coerceIn(tracks.indices)
         loggedTrackId = null
-        listenedTrackId = null
+        finishListen()
         c.setMediaItems(items, currentIndex, 0L)
         c.prepare()
         c.play()
@@ -363,7 +384,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         if (index !in queue.indices) return
         currentIndex = index
         loggedTrackId = null
-        listenedTrackId = null
+        finishListen()
         c.seekTo(index, 0L)
         c.play()
         onTrackChanged()

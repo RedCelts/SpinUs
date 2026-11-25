@@ -129,6 +129,8 @@ object HomeDiskCache {
         put("lp", lastPlayedDate ?: JSONObject.NULL); put("fav", isFavorite)
         put("arId", artistId ?: JSONObject.NULL); put("n", indexNumber ?: JSONObject.NULL)
         put("d", discNumber ?: JSONObject.NULL)
+        if (genres.isNotEmpty()) put("g", JSONArray(genres))
+        put("yr", year ?: JSONObject.NULL)
     }
 
     private fun JSONObject.toTrack() = Track(
@@ -145,7 +147,9 @@ object HomeDiskCache {
         isFavorite = optBoolean("fav"),
         artistId = str("arId"),
         indexNumber = int("n"),
-        discNumber = int("d")
+        discNumber = int("d"),
+        genres = optJSONArray("g")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(),
+        year = int("yr")
     )
 
     private fun Album.toJson() = JSONObject().apply {

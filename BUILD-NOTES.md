@@ -744,3 +744,33 @@ the v1.2 script.)
 - Artist album carousel: covers no longer turn by position; all covers
   tilt with the swipe (rotationY +20° swiping left, −20° swiping right,
   from the pager's movement direction) and ease back flat when it stops.
+
+## v1.5.0 — Home recommendation rules (2026-11-25)
+`data/HomeRules.kt`. Plays come from the play log (30-second rule).
+Jellyfin has no BPM/energy/valence/similarity data, so similarity =
+genre-tag overlap (Jaccard) and Jellyfin's instant mix; mood = genre
+families by time of day. Tracks now carry `genres` + `year`
+(`Fields=Genres,ProductionYear`; also in the Home disk cache).
+- `ListenSignals` (files/signals/signals.json): per song, the last 6
+  outcomes (listened ms, length, skip = < 20 s of a longer song), 120 days.
+  Recorded whenever the playing song changes.
+- Guardrails: (1) `limitRepeats` — an album on ≤ 2 shelves per load
+  (tiles, You might enjoy, New releases, Rediscover, Recently played,
+  Recently added, in that order); (2) `VersionHygiene` — (Instrumental),
+  (Acapella), (Sped Up), (Clean) copies dropped when the main version is
+  in the library; (3) skip penalty — skipped < 20 s the last 2 plays in a
+  row → hidden from recommendations for 30 days.
+- Rule 6 Recently added: albums by DateCreated desc with ≥ 1 scanned song.
+- Rule 7 Stations: seeds = top 6–8 artists by plays in 60 days, minus
+  artists in the first 3 "You might enjoy" cards (falls back to the old
+  most-played list until there's play-log data). Tap builds 60 songs:
+  25% seed (≤ 1 skip), 50% similar (genre overlap ≥ 0.70 or instant mix),
+  25% deep cuts (≤ 1 play) in the seed's genres; ≥ 3 songs between the
+  same artist.
+- Rule 8 Made for you (4–6 cards, same all day, new each day): artist
+  mixes (top 3 artists: 40% the artist, 60% collaborators/genre peers not
+  played in 7 days), decade mixes (your top decades, genres with affinity
+  > 0.6), time-of-day mix (calm at night, upbeat by day, songs you finish
+  ≥ 75% or never skip). 50 songs target, max 3 per artist (the core artist
+  of an artist mix is the exception), no songs < 90 s; a mix needs ≥ 20
+  songs to show. Cards: 2×2 cover collage.

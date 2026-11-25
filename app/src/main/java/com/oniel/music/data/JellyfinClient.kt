@@ -50,7 +50,7 @@ class JellyfinClient(
         /** Session-message headers for stats sharing between Oniel Music apps. */
         const val STATS_REQUEST = "onielmusic:stats-request"
         const val STATS_REPLY = "onielmusic:stats-reply"
-        const val CLIENT_VERSION = "1.4.0"
+        const val CLIENT_VERSION = "1.5.0"
         /** Track ids per playlist request (keeps the URL short). */
         private const val PLAYLIST_CHUNK = 100
         /**
@@ -203,7 +203,7 @@ class JellyfinClient(
     suspend fun getTracks(): List<Track> {
         val json = getItems(
             "IncludeItemTypes=Audio&Recursive=true" +
-                "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks,UserData,PremiereDate"
+                "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks,UserData,PremiereDate,Genres,ProductionYear"
         )
         return json.optJSONArray("Items")?.toTrackList().orEmpty()
     }
@@ -441,6 +441,20 @@ class JellyfinClient(
 
     /** Favorite flag changed in this session, if any (lists may be older). */
     fun favoriteOverride(itemId: String): Boolean? = favoriteOverrides[itemId]
+
+    /**
+     * Jellyfin's instant mix for an item (artist, album or song): tracks
+     * the server finds similar (shared genres). Used for stations.
+     */
+    suspend fun getInstantMix(itemId: String, limit: Int = 100): List<Track> {
+        val uid = requireUserId()
+        val json = getJson(
+            "/Items/$itemId/InstantMix?userId=$uid&Limit=$limit" +
+                "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks,UserData,Genres,ProductionYear",
+            "instant mix"
+        )
+        return json.optJSONArray("Items")?.toTrackList().orEmpty()
+    }
 
     /** A playlist's songs, in playlist order. */
     suspend fun getPlaylistTracks(playlistId: String): List<Track> {
@@ -1104,7 +1118,10 @@ class JellyfinClient(
                 indexNumber = if (item.has("IndexNumber") && !item.isNull("IndexNumber"))
                     item.optInt("IndexNumber") else null,
                 discNumber = if (item.has("ParentIndexNumber") && !item.isNull("ParentIndexNumber"))
-                    item.optInt("ParentIndexNumber") else null
+                    item.optInt("ParentIndexNumber") else null,
+                genres = item.optJSONArray("Genres")?.toStringList().orEmpty(),
+                year = if (item.has("ProductionYear") && !item.isNull("ProductionYear"))
+                    item.optInt("ProductionYear") else null
             )
         }
 

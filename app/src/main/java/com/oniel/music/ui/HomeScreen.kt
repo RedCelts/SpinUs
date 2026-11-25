@@ -1,5 +1,6 @@
 package com.oniel.music.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -34,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.coroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -95,6 +97,9 @@ fun HomeScreen(
     val recs = remember { Recommendations(context, deezer) }
     var libraryAlbums by remember { mutableStateOf(cached?.libraryAlbums.orEmpty()) }
     var picks by remember { mutableStateOf(HomeCache.picks) }
+    var stations by remember { mutableStateOf(HomeCache.stations) }
+    var mixes by remember { mutableStateOf(HomeCache.mixes) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     var additions by remember { mutableStateOf(recs.cachedAdditions()) }
     var additionsRefreshing by remember { mutableStateOf(false) }
     var additionsError by remember { mutableStateOf(false) }
@@ -138,7 +143,8 @@ fun HomeScreen(
                 .filter { it.lastPlayedDate != null }
                 .sortedByDescending { it.lastPlayedDate }
                 .take(20)
-            recentlyAdded = added
+            // Rule 6: albums newest first, only ones with scanned songs.
+            recentlyAdded = com.oniel.music.data.RecentlyAddedRule.apply(added, tracks)
             allTracks = tracks
             libraryAlbums = albums
             // Recommended stations: the artists with the most played albums
@@ -177,12 +183,48 @@ fun HomeScreen(
         val nowMs = System.currentTimeMillis()
         val plays = player.playLogEntries()
         val profile = com.oniel.music.data.Taste.build(plays, allTracks, nowMs)
+        val signals = try { player.signalSnapshot() } catch (e: Exception) { com.oniel.music.data.SignalSnapshot.EMPTY }
+        val ctx = com.oniel.music.data.RuleContext(allTracks, plays, signals, nowMs)
         picks = try {
             recs.youMightEnjoy(client, profile, libraryAlbums, allTracks, plays, nowMs)
+                // Guardrails 2 + 3 on single-song picks.
+                .filter { p -> p !is com.oniel.music.data.Pick.TrackPick || ctx.recommendable(p.track) }
         } catch (e: Exception) {
             emptyList()
         }
         HomeCache.picks = picks
+        // Rule 7: stations seeded by your top artists of the last 60 days,
+        // minus the artists already in the first 3 "You might enjoy" cards.
+        val top3 = picks.take(3).mapNotNull { p ->
+            when (p) {
+                is com.oniel.music.data.Pick.AlbumPick -> p.album.artist
+                is com.oniel.music.data.Pick.ArtistPick -> p.name
+                is com.oniel.music.data.Pick.TrackPick -> ctx.artistOf(p.track)
+            }
+        }.map { com.oniel.music.data.matchKey(it) }.toSet()
+        val seeds = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.oniel.music.data.StationRules.seeds(ctx, top3)
+        }
+        if (seeds.size >= 1) {
+            stations = seeds.map { (name, plays) ->
+                val key = com.oniel.music.data.matchKey(name)
+                ArtistStation(
+                    name = name,
+                    plays = plays,
+                    coverAlbum = libraryAlbums.filter { com.oniel.music.data.matchKey(it.artist) == key }
+                        .maxByOrNull { it.playCount }
+                        ?: libraryAlbums.firstOrNull { a ->
+                            allTracks.any { t -> t.albumId == a.id && ctx.artistsOf(t).any { com.oniel.music.data.matchKey(it) == key } }
+                        }
+                )
+            }
+            HomeCache.stations = stations
+        }
+        // Rule 8: Made for you (artist, decade and time-of-day mixes; daily).
+        mixes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            try { com.oniel.music.data.MixRules.build(ctx) } catch (e: Exception) { emptyList() }
+        }
+        HomeCache.mixes = mixes
         HomeCache.picksFor = libraryAlbums
         additionsRefreshing = true
         try {
@@ -203,6 +245,29 @@ fun HomeScreen(
             onDismiss = { openAddition = null }
         )
     }
+
+    // Guardrail 1: an album appears on at most 2 shelves per Home load
+    // (shelves in screen order; later shelves give up the repeats).
+    val guarded = remember(tiles, picks, newReleases, rediscover, recentlyPlayed, recentlyAdded) {
+        com.oniel.music.data.limitRepeats(
+            listOf<List<Any>>(tiles, picks, newReleases, rediscover, recentlyPlayed, recentlyAdded),
+            albumIdOf = { item ->
+                when (item) {
+                    is Track -> item.albumId
+                    is Album -> item.id
+                    is com.oniel.music.data.Pick.AlbumPick -> item.album.id
+                    is com.oniel.music.data.Pick.TrackPick -> item.track.albumId
+                    else -> null
+                }
+            }
+        )
+    }
+    @Suppress("UNCHECKED_CAST") val shownTiles = guarded[0] as List<Track>
+    @Suppress("UNCHECKED_CAST") val shownPicks = guarded[1] as List<com.oniel.music.data.Pick>
+    @Suppress("UNCHECKED_CAST") val shownNew = guarded[2] as List<Album>
+    @Suppress("UNCHECKED_CAST") val shownRediscover = guarded[3] as List<Album>
+    @Suppress("UNCHECKED_CAST") val shownRecentPlayed = guarded[4] as List<Album>
+    @Suppress("UNCHECKED_CAST") val shownRecentAdded = guarded[5] as List<Album>
 
     // Scrolls up under the frosted status-bar strip.
     LazyColumn(
@@ -281,11 +346,11 @@ fun HomeScreen(
         } else {
             // (1) Quick grid — 8 scored tiles, 2 columns x 4 rows. Each
             // tile is the best-scoring track of one album.
-            if (tiles.isNotEmpty()) {
+            if (shownTiles.isNotEmpty()) {
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
                     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        tiles.chunked(2).forEach { row ->
+                        shownTiles.chunked(2).forEach { row ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -314,10 +379,10 @@ fun HomeScreen(
             }
 
             // You might enjoy (from the library) + Recommended additions (not in it).
-            if (picks.isNotEmpty()) {
+            if (shownPicks.isNotEmpty()) {
                 item {
                     YouMightEnjoyRow(
-                        picks = picks,
+                        picks = shownPicks,
                         client = client,
                         onAlbumClick = onAlbumClick,
                         onArtistClick = onArtistClick,
@@ -338,11 +403,11 @@ fun HomeScreen(
             }
 
             // (2) New releases.
-            if (newReleases.isNotEmpty()) {
+            if (shownNew.isNotEmpty()) {
                 item { ShelfHeader(title = stringResource(R.string.shelf_new_releases)) { onOpenLibrary(1) } }
                 item {
                     AlbumShelf(
-                        albums = newReleases,
+                        albums = shownNew,
                         client = client,
                         onAlbumClick = onAlbumClick
                     )
@@ -350,11 +415,11 @@ fun HomeScreen(
             }
 
             // (3) Rediscover albums.
-            if (rediscover.isNotEmpty()) {
+            if (shownRediscover.isNotEmpty()) {
                 item { ShelfHeader(title = stringResource(R.string.shelf_rediscover)) { onOpenLibrary(1) } }
                 item {
                     AlbumShelf(
-                        albums = rediscover,
+                        albums = shownRediscover,
                         client = client,
                         onAlbumClick = onAlbumClick
                     )
@@ -362,11 +427,11 @@ fun HomeScreen(
             }
 
             // (4) Recently played.
-            if (recentlyPlayed.isNotEmpty()) {
+            if (shownRecentPlayed.isNotEmpty()) {
                 item { ShelfHeader(title = stringResource(R.string.shelf_recently_played)) { onOpenLibrary(1) } }
                 item {
                     AlbumShelf(
-                        albums = recentlyPlayed,
+                        albums = shownRecentPlayed,
                         client = client,
                         onAlbumClick = onAlbumClick
                     )
@@ -374,26 +439,28 @@ fun HomeScreen(
             }
 
             // (5) Recently added.
-            if (recentlyAdded.isNotEmpty()) {
+            if (shownRecentAdded.isNotEmpty()) {
                 item { ShelfHeader(title = stringResource(R.string.shelf_recently_added)) { onOpenLibrary(1) } }
                 item {
                     AlbumShelf(
-                        albums = recentlyAdded,
+                        albums = shownRecentAdded,
                         client = client,
                         onAlbumClick = onAlbumClick
                     )
                 }
             }
 
-            // (6) Recommended stations (top artists).
-            if (topArtists.isNotEmpty()) {
+            // (6) Recommended stations: rule 7 (falls back to the most-played
+            // artists until the play log has 60 days of plays to go on).
+            val stationList = stations.ifEmpty { topArtists }
+            if (stationList.isNotEmpty()) {
                 item { ShelfHeader(title = stringResource(R.string.shelf_stations)) { onOpenLibrary(0) } }
                 item {
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(topArtists) { station ->
+                        items(stationList) { station ->
                             StationCard(
                                 station = station,
                                 imageUrl = station.coverAlbum?.artistId?.let {
@@ -403,12 +470,9 @@ fun HomeScreen(
                                     client.albumArtUrl(it, 300)
                                 },
                                 onClick = {
-                                    val artistTracks = allTracks.filter {
-                                        it.artists.contains(station.name) ||
-                                            it.albumArtist == station.name
-                                    }.shuffled()
-                                    if (artistTracks.isNotEmpty()) {
-                                        player.play(artistTracks, 0)
+                                    scope.launch {
+                                        val queue = buildStation(station, client, player, allTracks)
+                                        if (queue.isNotEmpty()) player.play(queue, 0)
                                     }
                                 }
                             )
@@ -417,8 +481,8 @@ fun HomeScreen(
                 }
             }
 
-            // (7) Made for you (mixes by score: one mix per top artist).
-            if (topArtists.isNotEmpty()) {
+            // (7) Made for you: rule 8 mixes (4–6 cards, new each day).
+            if (mixes.isNotEmpty()) {
                 item {
                     Spacer(modifier = Modifier.height(8.dp))
                     ShelfHeader(title = stringResource(R.string.shelf_made_for_you))
@@ -428,28 +492,106 @@ fun HomeScreen(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        items(topArtists) { station ->
-                            AlbumCard(
-                                title = stringResource(R.string.mix_title, station.name),
-                                subtitle = stringResource(R.string.mix_subtitle),
-                                imageUrl = station.coverAlbum?.let {
-                                    client.albumArtUrl(it, 300)
-                                },
-                                onClick = {
-                                    val artistTracks = allTracks.filter {
-                                        it.artists.contains(station.name) ||
-                                            it.albumArtist == station.name
-                                    }.shuffled()
-                                    if (artistTracks.isNotEmpty()) {
-                                        player.play(artistTracks, 0)
-                                    }
-                                }
+                        items(mixes, key = { it.id }) { mix ->
+                            MixCard(
+                                mix = mix,
+                                client = client,
+                                onClick = { player.play(mix.tracks, 0) }
                             )
                         }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * Builds a station when tapped (rule 7): your library + Jellyfin's
+ * instant mix for the artist, mixed 25 / 50 / 25 with artist spacing.
+ */
+private suspend fun buildStation(
+    station: ArtistStation,
+    client: JellyfinClient,
+    player: PlayerController,
+    library: List<Track>
+): List<Track> {
+    val artistId = station.coverAlbum?.artistId
+    val instant = if (artistId != null) {
+        try { client.getInstantMix(artistId) } catch (e: Exception) { emptyList() }
+    } else emptyList()
+    val signals = try { player.signalSnapshot() } catch (e: Exception) { com.oniel.music.data.SignalSnapshot.EMPTY }
+    val ctx = com.oniel.music.data.RuleContext(library, player.playLogEntries(), signals)
+    return kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        com.oniel.music.data.StationRules.build(station.name, ctx, instant)
+    }
+}
+
+/** A mix card: 2×2 collage of the mix's first covers, title, song count. */
+@Composable
+private fun MixCard(mix: com.oniel.music.data.Mix, client: JellyfinClient, onClick: () -> Unit) {
+    val covers = remember(mix.id, mix.tracks) {
+        mix.tracks.distinctBy { it.albumId ?: it.artistId ?: it.id }.take(4)
+    }
+    Column(
+        modifier = Modifier
+            .width(150.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(150.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column {
+                covers.chunked(2).forEach { row ->
+                    Row {
+                        row.forEach { t ->
+                            CoverImage(
+                                url = try { client.trackArtUrl(t, 150) } catch (e: Exception) { null },
+                                modifier = Modifier.size(75.dp),
+                                cornerDp = 0.dp
+                            )
+                        }
+                    }
+                }
+            }
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            0.55f to androidx.compose.ui.graphics.Color.Transparent,
+                            1f to androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f)
+                        )
+                    )
+            )
+            Text(
+                text = mix.title,
+                color = androidx.compose.ui.graphics.Color.White,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(8.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = mix.subtitle,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            text = stringResource(R.string.mix_song_count, mix.tracks.size),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
@@ -593,6 +735,8 @@ object HomeCache {
     @Volatile private var loadedAt = 0L
     @Volatile var picks: List<com.oniel.music.data.Pick> = emptyList()
     @Volatile var picksFor: List<Album>? = null
+    @Volatile var stations: List<ArtistStation> = emptyList()
+    @Volatile var mixes: List<com.oniel.music.data.Mix> = emptyList()
 
     fun isStale() = System.currentTimeMillis() - loadedAt > MAX_AGE_MS
 
@@ -618,5 +762,7 @@ object HomeCache {
         loadedAt = 0L
         picks = emptyList()
         picksFor = null
+        stations = emptyList()
+        mixes = emptyList()
     }
 }
