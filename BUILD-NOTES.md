@@ -741,3 +741,6 @@ the v1.2 script.)
   → "app needs to be open". Requests go only to Oniel Music sessions.
   The presence socket now handles messages, answers ForceKeepAlive with
   KeepAlive, reconnects after failure, and advertises DisplayMessage.
+- Artist album carousel: covers no longer turn by position; all covers
+  tilt with the swipe (rotationY +20° swiping left, −20° swiping right,
+  from the pager's movement direction) and ease back flat when it stops.

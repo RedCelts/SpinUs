@@ -2,6 +2,8 @@ package com.oniel.music.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -324,6 +326,27 @@ fun AlbumCarousel(
     var opening by remember { mutableStateOf<String?>(null) }
     val zoom = remember { Animatable(1f) }
 
+    // Tilt with the swipe: swiping left turns the covers 20°, swiping
+    // right -20°; they ease back flat when the carousel stops.
+    var tiltTarget by remember { mutableStateOf(0f) }
+    LaunchedEffect(pagerState) {
+        var last = pagerState.currentPage + pagerState.currentPageOffsetFraction
+        snapshotFlow { pagerState.currentPage + pagerState.currentPageOffsetFraction }
+            .collect { pos ->
+                val moved = pos - last
+                last = pos
+                if (abs(moved) > 0.0005f) tiltTarget = if (moved > 0f) 20f else -20f
+            }
+    }
+    LaunchedEffect(pagerState.isScrollInProgress) {
+        if (!pagerState.isScrollInProgress) tiltTarget = 0f
+    }
+    val tilt by animateFloatAsState(
+        targetValue = tiltTarget,
+        animationSpec = tween(durationMillis = 220),
+        label = "carouselTilt"
+    )
+
     HorizontalPager(
         state = pagerState,
         contentPadding = PaddingValues(horizontal = 76.dp),
@@ -346,7 +369,7 @@ fun AlbumCarousel(
                     scaleX = scale
                     scaleY = scale
                     alpha = mix(1f, 0.5f, distance)
-                    rotationY = offset.coerceIn(-1f, 1f) * 30f
+                    rotationY = tilt
                     translationY = distance * 28.dp.toPx()
                     cameraDistance = 14f * density
                 }
