@@ -413,7 +413,7 @@ private fun testAuthHeaderValue() {
     val header = client.authHeaderValue()
     check("auth header starts with MediaBrowser Token", header.startsWith("MediaBrowser Token=\"tok123\""))
     check("auth header names the client", header.contains("Client=\"Oniel Music\""))
-    check("auth header carries the version", header.contains("Version=\"1.3.4\""))
+    check("auth header carries the version", header.contains("Version=\"1.3.5\""))
     check("auth header has a device id", header.contains("DeviceId=\""))
     // The URL keeps api_key too (both together return 200).
     val url = client.audioUrl("track-9")

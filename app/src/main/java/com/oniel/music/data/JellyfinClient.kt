@@ -46,7 +46,7 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.3.4"
+        const val CLIENT_VERSION = "1.3.5"
         /** Track ids per playlist request (keeps the URL short). */
         private const val PLAYLIST_CHUNK = 100
         /**
@@ -344,81 +344,73 @@ class JellyfinClient(
         }
     }
 
-    /**
-     * Search everything at once: artists, albums, songs (by title, plus the
-     * songs of the best-matching artists) and playlists. Each part runs in
-     * parallel and fails on its own, so one bad query never blanks the rest.
-     */
-    suspend fun searchAll(query: String): SearchResults = coroutineScope {
+    // ---- Search (v1.3.5: one call per kind, so results can show as they arrive) ----
+
+    private val searchTrackFields =
+        "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks,PremiereDate&EnableUserData=false"
+
+    private fun enc(q: String) = URLEncoder.encode(q, "UTF-8")
+
+    suspend fun searchArtists(query: String): List<ArtistHit> {
         val uid = requireUserId()
-        val q = URLEncoder.encode(query, "UTF-8")
-        val trackFields = "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks,UserData,PremiereDate"
-
-        val artistsJob = async {
-            try {
-                val json = getJson("/Artists?SearchTerm=$q&UserId=$uid&Recursive=true&Limit=20", "search artists")
-                val items = json.optJSONArray("Items")
-                (0 until (items?.length() ?: 0)).mapNotNull { i ->
-                    val item = items!!.optJSONObject(i) ?: return@mapNotNull null
-                    val name = item.optString("Name", "")
-                    if (name.isBlank()) null
-                    else ArtistHit(
-                        id = item.getString("Id"),
-                        name = name,
-                        imageTag = item.optJSONObject("ImageTags")?.optStringOrNull("Primary")
-                    )
-                }
-            } catch (e: Exception) { emptyList() }
-        }
-        val albumsJob = async {
-            try {
-                getItems(
-                    "IncludeItemTypes=MusicAlbum&Recursive=true&SearchTerm=$q&Limit=30" +
-                        "&Fields=DateCreated,PremiereDate,UserData"
-                ).optJSONArray("Items")?.toAlbumList().orEmpty()
-            } catch (e: Exception) { emptyList() }
-        }
-        val songsJob = async {
-            try {
-                getItems("IncludeItemTypes=Audio&Recursive=true&SearchTerm=$q&Limit=60$trackFields")
-                    .optJSONArray("Items")?.toTrackList().orEmpty()
-            } catch (e: Exception) { emptyList() }
-        }
-        val hintsJob = async { try { search(query) } catch (e: Exception) { emptyList() } }
-        val playlistsJob = async {
-            try {
-                val items = getItems("IncludeItemTypes=Playlist&Recursive=true&SearchTerm=$q&Limit=20")
-                    .optJSONArray("Items")
-                (0 until (items?.length() ?: 0)).map { i ->
-                    val item = items!!.getJSONObject(i)
-                    Playlist(
-                        id = item.getString("Id"),
-                        name = item.optString("Name", ""),
-                        itemCount = item.optInt("ChildCount", 0)
-                    )
-                }
-            } catch (e: Exception) { emptyList() }
-        }
-
-        val artists = artistsJob.await()
-        // Songs by the two best-matching artists, so typing an artist's
-        // name also lists their songs.
-        val byArtist = if (artists.isEmpty()) emptyList() else try {
-            getItems(
-                "IncludeItemTypes=Audio&Recursive=true&ArtistIds=${artists.take(2).joinToString(",") { it.id }}" +
-                    "&SortBy=PlayCount,SortName&SortOrder=Descending&Limit=30$trackFields"
-            ).optJSONArray("Items")?.toTrackList().orEmpty()
-        } catch (e: Exception) { emptyList() }
-
-        val tracks = LinkedHashMap<String, Track>()
-        (songsJob.await() + hintsJob.await() + byArtist).forEach { tracks.putIfAbsent(it.id, it) }
-        SearchResults(
-            artists = artists,
-            albums = albumsJob.await(),
-            tracks = tracks.values.toList(),
-            playlists = playlistsJob.await()
+        val json = getJson(
+            "/Artists?SearchTerm=${enc(query)}&UserId=$uid&Recursive=true&Limit=15&EnableUserData=false",
+            "search artists"
         )
+        val items = json.optJSONArray("Items") ?: return emptyList()
+        return (0 until items.length()).mapNotNull { i ->
+            val item = items.optJSONObject(i) ?: return@mapNotNull null
+            val name = item.optString("Name", "")
+            if (name.isBlank()) null
+            else ArtistHit(
+                id = item.getString("Id"),
+                name = name,
+                imageTag = item.optJSONObject("ImageTags")?.optStringOrNull("Primary")
+            )
+        }
     }
+
+    suspend fun searchAlbums(query: String): List<Album> =
+        getItems(
+            "IncludeItemTypes=MusicAlbum&Recursive=true&SearchTerm=${enc(query)}&Limit=20" +
+                "&Fields=PremiereDate&EnableUserData=false"
+        ).optJSONArray("Items")?.toAlbumList().orEmpty()
+
+    suspend fun searchSongs(query: String): List<Track> =
+        getItems("IncludeItemTypes=Audio&Recursive=true&SearchTerm=${enc(query)}&Limit=40$searchTrackFields")
+            .optJSONArray("Items")?.toTrackList().orEmpty()
+
+    /** Most-played songs of these artists (so an artist search lists songs too). */
+    suspend fun songsByArtists(artistIds: List<String>, limit: Int = 20): List<Track> {
+        if (artistIds.isEmpty()) return emptyList()
+        return getItems(
+            "IncludeItemTypes=Audio&Recursive=true&ArtistIds=${artistIds.joinToString(",")}" +
+                "&SortBy=PlayCount,SortName&SortOrder=Descending&Limit=$limit$searchTrackFields"
+        ).optJSONArray("Items")?.toTrackList().orEmpty()
+    }
+
+    suspend fun searchPlaylists(query: String): List<Playlist> {
+        val items = getItems("IncludeItemTypes=Playlist&Recursive=true&SearchTerm=${enc(query)}&Limit=15")
+            .optJSONArray("Items") ?: return emptyList()
+        return (0 until items.length()).map { i ->
+            val item = items.getJSONObject(i)
+            Playlist(
+                id = item.getString("Id"),
+                name = item.optString("Name", ""),
+                itemCount = item.optInt("ChildCount", 0)
+            )
+        }
+    }
+
+    /**
+     * Small read of every song (artist, title, album, length, art) for
+     * matching chart songs to the library — no user data, no extras.
+     */
+    suspend fun getTrackIndex(): List<Track> =
+        getItems(
+            "IncludeItemTypes=Audio&Recursive=true" +
+                "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks&EnableUserData=false"
+        ).optJSONArray("Items")?.toTrackList().orEmpty()
 
     /** A playlist's songs, in playlist order. */
     suspend fun getPlaylistTracks(playlistId: String): List<Track> {
@@ -435,13 +427,14 @@ class JellyfinClient(
 
     /** Every music genre in the library, A to Z. */
     suspend fun getMusicGenres(): List<Genre> {
+        genresCache?.let { return it }
         val uid = requireUserId()
         val json = getJson(
             "/MusicGenres?userId=$uid&Recursive=true&SortBy=SortName&SortOrder=Ascending",
             "genres"
         )
         val items = json.optJSONArray("Items") ?: return emptyList()
-        return (0 until items.length()).mapNotNull { i ->
+        val list = (0 until items.length()).mapNotNull { i ->
             val item = items.optJSONObject(i) ?: return@mapNotNull null
             val name = item.optString("Name", "")
             if (name.isBlank()) return@mapNotNull null
@@ -451,7 +444,12 @@ class JellyfinClient(
                 imageTag = item.optJSONObject("ImageTags")?.optStringOrNull("Primary")
             )
         }
+        genresCache = list
+        return list
     }
+
+    /** Library genres rarely change: read once per session. */
+    @Volatile private var genresCache: List<Genre>? = null
 
     /** Albums tagged with one genre, A to Z. */
     suspend fun getGenreAlbums(genreId: String): List<Album> {

@@ -7,6 +7,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import com.oniel.music.data.Playlist
 import com.oniel.music.data.SearchResults
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -112,20 +113,62 @@ fun SearchScreen(
     var results by remember { mutableStateOf<SearchResults?>(null) }
 
     LaunchedEffect(query) {
-        if (query.isBlank()) {
+        val q = query.trim()
+        if (q.isBlank()) {
             results = null
             searching = false
             return@LaunchedEffect
         }
-        searching = true
-        delay(400)
-        try {
-            results = client.searchAll(query.trim())
-        } catch (e: Exception) {
-            results = null
-        } finally {
+        // Same search as a moment ago: instant.
+        SearchCache.get(q)?.let {
+            results = it
             searching = false
+            return@LaunchedEffect
         }
+        searching = true
+        delay(300)
+        // Each kind shows the moment it arrives (no waiting for the slowest).
+        var acc = SearchResults(emptyList(), emptyList(), emptyList(), emptyList())
+        var pending = 4
+        var titleSongs = emptyList<Track>()
+        var artistSongs = emptyList<Track>()
+        fun publish(update: (SearchResults) -> SearchResults) {
+            acc = update(acc)
+            results = acc
+            searching = pending > 0 && acc.isEmpty
+        }
+        fun mergedSongs() = (titleSongs + artistSongs).distinctBy { it.id }
+        coroutineScope {
+            launch {
+                val artists = try { client.searchArtists(q) } catch (e: Exception) { emptyList() }
+                pending--
+                publish { it.copy(artists = artists) }
+                if (artists.isNotEmpty()) {
+                    artistSongs = try {
+                        client.songsByArtists(artists.take(2).map { it.id })
+                    } catch (e: Exception) { emptyList() }
+                    publish { it.copy(tracks = mergedSongs()) }
+                }
+            }
+            launch {
+                val albums = try { client.searchAlbums(q) } catch (e: Exception) { emptyList() }
+                pending--
+                publish { it.copy(albums = albums) }
+            }
+            launch {
+                titleSongs = try { client.searchSongs(q) } catch (e: Exception) { emptyList() }
+                pending--
+                publish { it.copy(tracks = mergedSongs()) }
+            }
+            launch {
+                val playlists = try { client.searchPlaylists(q) } catch (e: Exception) { emptyList() }
+                pending--
+                publish { it.copy(playlists = playlists) }
+            }
+        }
+        searching = false
+        results = acc
+        SearchCache.put(q, acc)
     }
 
     Column(
@@ -467,5 +510,22 @@ private fun PlaylistHitRow(playlist: Playlist, onPlay: () -> Unit) {
             contentDescription = null,
             tint = MaterialTheme.colorScheme.tertiary
         )
+    }
+}
+
+/** The last few searches (2 min), so retyping or going back is instant. */
+private object SearchCache {
+    private const val TTL_MS = 2 * 60_000L
+    private val entries = object : LinkedHashMap<String, Pair<Long, SearchResults>>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, SearchResults>>?) = size > 20
+    }
+
+    @Synchronized
+    fun get(q: String): SearchResults? =
+        entries[q.lowercase()]?.takeIf { System.currentTimeMillis() - it.first < TTL_MS }?.second
+
+    @Synchronized
+    fun put(q: String, r: SearchResults) {
+        entries[q.lowercase()] = System.currentTimeMillis() to r
     }
 }

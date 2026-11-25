@@ -682,3 +682,19 @@ the v1.2 script.)
   results + the songs of the two best-matching artists, and playlists.
   Each part fails on its own. Sections: Artists, Albums, Songs, Playlists
   (tap a playlist to play it; `getPlaylistTracks`).
+
+## v1.3.5 — Speed: Home cache, parallel loads, progressive search (2026-11-24)
+- Home reloaded the whole library (albums ×2, every song, recently added —
+  one after another) on every visit: ~9 s spinner after closing the player.
+  Now `HomeCache` keeps the last load for the app's life: returning to
+  Home is instant, and a load older than 5 min refreshes quietly in the
+  background (old shelves stay up). The four reads run in parallel.
+  "You might enjoy" is reused for the same load. Cleared on log out.
+- Genre page: only the chart gates the page; "In library" badges and your
+  albums fill in after, with all library-genre reads in parallel.
+  `LibraryIndex` reuses Home's song list (else a light `getTrackIndex`),
+  kept 30 min; library genres read once per session; pages cached 10 min.
+- Search: one request per kind (`searchArtists/Albums/Songs/Playlists`,
+  `songsByArtists`), each section shows as soon as it arrives; no user
+  data in search reads; dropped the duplicate hints call; 300 ms debounce;
+  last 20 searches cached 2 min.

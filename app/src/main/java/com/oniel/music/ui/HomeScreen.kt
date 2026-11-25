@@ -33,6 +33,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,23 +75,26 @@ fun HomeScreen(
     onArtistClick: (String) -> Unit = {},
     onOpenSettings: () -> Unit = {}
 ) {
-    var loading by remember { mutableStateOf(true) }
+    // Returning to Home shows the last load instantly (no spinner); it
+    // refreshes quietly in the background when that load is old.
+    val cached = HomeCache.data
+    var loading by remember { mutableStateOf(cached == null) }
     var loadError by remember { mutableStateOf(false) }
-    var tiles by remember { mutableStateOf<List<Track>>(emptyList()) }
-    var newReleases by remember { mutableStateOf<List<Album>>(emptyList()) }
-    var rediscover by remember { mutableStateOf<List<Album>>(emptyList()) }
-    var recentlyPlayed by remember { mutableStateOf<List<Album>>(emptyList()) }
-    var recentlyAdded by remember { mutableStateOf<List<Album>>(emptyList()) }
-    var topArtists by remember { mutableStateOf<List<ArtistStation>>(emptyList()) }
-    var allTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
+    var tiles by remember { mutableStateOf(cached?.tiles.orEmpty()) }
+    var newReleases by remember { mutableStateOf(cached?.newReleases.orEmpty()) }
+    var rediscover by remember { mutableStateOf(cached?.rediscover.orEmpty()) }
+    var recentlyPlayed by remember { mutableStateOf(cached?.recentlyPlayed.orEmpty()) }
+    var recentlyAdded by remember { mutableStateOf(cached?.recentlyAdded.orEmpty()) }
+    var topArtists by remember { mutableStateOf(cached?.topArtists.orEmpty()) }
+    var allTracks by remember { mutableStateOf(cached?.allTracks.orEmpty()) }
     var menuOpen by remember { mutableStateOf(false) }
 
     // Recommendations (load after the main shelves, never block Home).
     val context = androidx.compose.ui.platform.LocalContext.current
     val deezer = remember { com.oniel.music.data.DeezerClient(com.oniel.music.net.NetClients.http) }
     val recs = remember { Recommendations(context, deezer) }
-    var libraryAlbums by remember { mutableStateOf<List<Album>>(emptyList()) }
-    var picks by remember { mutableStateOf<List<com.oniel.music.data.Pick>>(emptyList()) }
+    var libraryAlbums by remember { mutableStateOf(cached?.libraryAlbums.orEmpty()) }
+    var picks by remember { mutableStateOf(HomeCache.picks) }
     var additions by remember { mutableStateOf(recs.cachedAdditions()) }
     var additionsRefreshing by remember { mutableStateOf(false) }
     var additionsError by remember { mutableStateOf(false) }
@@ -97,12 +102,17 @@ fun HomeScreen(
     var openAddition by remember { mutableStateOf<com.oniel.music.data.Addition?>(null) }
 
     LaunchedEffect(Unit) {
+        if (cached != null && !HomeCache.isStale()) return@LaunchedEffect
         try {
             val nowMs = System.currentTimeMillis()
-            val albums = client.getAlbums()
-            val albumsWithPlays = client.getAlbumsWithTrackPlayData()
-            val tracks = client.getTracks()
-            val added = client.getRecentlyAddedAlbums(30)
+            // The four library reads at the same time, not one after another.
+            val (albums, albumsWithPlays, tracks, added) = coroutineScope {
+                val a = async { client.getAlbums() }
+                val p = async { client.getAlbumsWithTrackPlayData() }
+                val t = async { client.getTracks() }
+                val n = async { client.getRecentlyAddedAlbums(30) }
+                HomeLoad(a.await(), p.await(), t.await(), n.await())
+            }
             tiles = Scoring.scoreTiles(tracks, nowMs)
             newReleases = Scoring.newReleases(albums, nowMs)
             rediscover = Scoring.rediscoverAlbums(albumsWithPlays, nowMs)
@@ -130,8 +140,14 @@ fun HomeScreen(
                 .filter { it.name.isNotBlank() }
                 .sortedByDescending { it.plays }
                 .take(6)
+            HomeCache.store(
+                HomeCache.Data(
+                    tiles, newReleases, rediscover, recentlyPlayed, recentlyAdded,
+                    topArtists, allTracks, libraryAlbums
+                )
+            )
         } catch (e: Exception) {
-            loadError = true
+            if (cached == null) loadError = true
         } finally {
             loading = false
         }
@@ -140,6 +156,8 @@ fun HomeScreen(
     // "You might enjoy" + "Recommended additions", once the library is loaded.
     LaunchedEffect(libraryAlbums, refreshTick) {
         if (libraryAlbums.isEmpty()) return@LaunchedEffect
+        // Already worked out for this library load: keep it.
+        if (refreshTick == 0 && HomeCache.picksFor === libraryAlbums && picks.isNotEmpty()) return@LaunchedEffect
         val nowMs = System.currentTimeMillis()
         val plays = player.playLogEntries()
         val profile = com.oniel.music.data.Taste.build(plays, allTracks, nowMs)
@@ -148,6 +166,8 @@ fun HomeScreen(
         } catch (e: Exception) {
             emptyList()
         }
+        HomeCache.picks = picks
+        HomeCache.picksFor = libraryAlbums
         additionsRefreshing = true
         try {
             additions = recs.additions(profile, allTracks, libraryAlbums, nowMs, force = refreshTick > 0)
@@ -417,7 +437,7 @@ fun HomeScreen(
     }
 }
 
-private data class ArtistStation(
+data class ArtistStation(
     val name: String,
     val plays: Int,
     val coverAlbum: Album?
@@ -522,5 +542,54 @@ private fun StationCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+    }
+}
+
+private data class HomeLoad(
+    val albums: List<Album>,
+    val albumsWithPlays: List<Album>,
+    val tracks: List<Track>,
+    val added: List<Album>
+)
+
+/**
+ * Home's last load, kept while the app runs so going back to Home is
+ * instant. Older than [MAX_AGE_MS] → refreshed in the background on the
+ * next visit (the old shelves stay up meanwhile). Also lends its song
+ * list to the genre pages' "In library" matching.
+ */
+object HomeCache {
+    private const val MAX_AGE_MS = 5 * 60_000L
+
+    data class Data(
+        val tiles: List<Track>,
+        val newReleases: List<Album>,
+        val rediscover: List<Album>,
+        val recentlyPlayed: List<Album>,
+        val recentlyAdded: List<Album>,
+        val topArtists: List<ArtistStation>,
+        val allTracks: List<Track>,
+        val libraryAlbums: List<Album>
+    )
+
+    @Volatile var data: Data? = null
+        private set
+    @Volatile private var loadedAt = 0L
+    @Volatile var picks: List<com.oniel.music.data.Pick> = emptyList()
+    @Volatile var picksFor: List<Album>? = null
+
+    fun isStale() = System.currentTimeMillis() - loadedAt > MAX_AGE_MS
+
+    fun store(d: Data) {
+        data = d
+        loadedAt = System.currentTimeMillis()
+    }
+
+    /** Forget everything (log out / server change). */
+    fun clear() {
+        data = null
+        loadedAt = 0L
+        picks = emptyList()
+        picksFor = null
     }
 }

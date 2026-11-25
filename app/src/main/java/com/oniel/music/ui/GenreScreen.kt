@@ -49,6 +49,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,48 +89,59 @@ fun GenreScreen(
     onAlbumClick: (String) -> Unit,
     onTrackPlayed: () -> Unit
 ) {
-    var topSongs by remember { mutableStateOf<List<DzTrack>>(emptyList()) }
-    var owned by remember { mutableStateOf<Map<Long, Track>>(emptyMap()) }
-    var albums by remember { mutableStateOf<List<Album>>(emptyList()) }
-    var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    val cacheKey = "${genreId}|${deezerGenreId}|$genreName"
+    val cached = GenrePageCache.get(cacheKey)
+    var topSongs by remember { mutableStateOf(cached?.topSongs.orEmpty()) }
+    var owned by remember { mutableStateOf(cached?.owned.orEmpty()) }
+    var albums by remember { mutableStateOf(cached?.albums.orEmpty()) }
+    var tracks by remember { mutableStateOf(cached?.tracks.orEmpty()) }
+    // Only the chart gates the page; library sections fill in after.
+    var loading by remember { mutableStateOf(cached == null) }
+    var libraryLoaded by remember { mutableStateOf(cached != null) }
     val preview = rememberPreviewPlayer()
 
     LaunchedEffect(genreId, deezerGenreId) {
-        try {
-            if (deezerGenreId != null) {
-                topSongs = try { sharedDeezer.genreTopTracks(deezerGenreId) } catch (e: Exception) { emptyList() }
+        if (cached != null) return@LaunchedEffect
+        coroutineScope {
+            // 1) The chart, shown as soon as it arrives.
+            val chart = async {
+                val list = if (deezerGenreId != null) {
+                    try { sharedDeezer.genreTopTracks(deezerGenreId) } catch (e: Exception) { emptyList() }
+                } else emptyList()
+                topSongs = list
+                loading = false
+                list
             }
-            // Library genres under this one (or the one library genre).
-            val libraryGenreIds = if (genreId != null) {
-                listOf(genreId)
-            } else {
-                try {
+            // 2) "In library" badges, from the (cached) library index.
+            val ownedJob = async {
+                val list = chart.await()
+                if (list.isEmpty()) emptyMap()
+                else {
+                    val index = try { LibraryIndex.get(client) } catch (e: Exception) { emptyMap() }
+                    list.mapNotNull { dz ->
+                        index[LibraryIndex.key(dz.artist, dz.title)]?.let { dz.id to it }
+                    }.toMap().also { owned = it }
+                }
+            }
+            // 3) Your albums / songs in matching library genres, all in parallel.
+            val libraryJob = async {
+                val ids = if (genreId != null) listOf(genreId) else try {
                     client.getMusicGenres()
                         .filter { GenreMatch.matches(it.name, genreName) }
                         .take(8)
                         .map { it.id }
-                } catch (e: Exception) {
-                    emptyList()
-                }
+                } catch (e: Exception) { emptyList() }
+                val albumLists = ids.map { id -> async { try { client.getGenreAlbums(id) } catch (e: Exception) { emptyList() } } }
+                val trackLists = ids.map { id -> async { try { client.getGenreTracks(id) } catch (e: Exception) { emptyList() } } }
+                val a = albumLists.flatMap { it.await() }.distinctBy { it.id }.sortedBy { it.name.lowercase() }
+                val t = trackLists.flatMap { it.await() }.distinctBy { it.id }
+                albums = a
+                tracks = t
+                libraryLoaded = true
+                a to t
             }
-            val foundAlbums = LinkedHashMap<String, Album>()
-            val foundTracks = LinkedHashMap<String, Track>()
-            libraryGenreIds.forEach { id ->
-                try { client.getGenreAlbums(id).forEach { foundAlbums.putIfAbsent(it.id, it) } } catch (e: Exception) { }
-                try { client.getGenreTracks(id).forEach { foundTracks.putIfAbsent(it.id, it) } } catch (e: Exception) { }
-            }
-            albums = foundAlbums.values.sortedBy { it.name.lowercase() }
-            tracks = foundTracks.values.toList()
-            // Which top songs you already have (title + artist match).
-            if (topSongs.isNotEmpty()) {
-                val index = try { LibraryIndex.get(client) } catch (e: Exception) { emptyMap() }
-                owned = topSongs.mapNotNull { dz ->
-                    index[LibraryIndex.key(dz.artist, dz.title)]?.let { dz.id to it }
-                }.toMap()
-            }
-        } finally {
-            loading = false
+            val (a, t) = libraryJob.await()
+            GenrePageCache.put(cacheKey, GenrePageCache.Page(chart.await(), ownedJob.await(), a, t))
         }
     }
 
@@ -272,7 +285,7 @@ fun GenreScreen(
             }
         }
 
-        if (albums.isEmpty() && tracks.isEmpty() && topSongs.isEmpty()) {
+        if (libraryLoaded && albums.isEmpty() && tracks.isEmpty() && topSongs.isEmpty()) {
             item {
                 Text(
                     text = stringResource(R.string.genre_empty),
@@ -508,7 +521,7 @@ object GenreMatch {
  * already own. Built from one full-library read, reused for 10 minutes.
  */
 object LibraryIndex {
-    private const val TTL_MS = 10 * 60_000L
+    private const val TTL_MS = 30 * 60_000L
     @Volatile private var cached: Map<String, Track>? = null
     @Volatile private var builtAt = 0L
 
@@ -517,8 +530,10 @@ object LibraryIndex {
     suspend fun get(client: JellyfinClient): Map<String, Track> {
         val now = System.currentTimeMillis()
         cached?.let { if (now - builtAt < TTL_MS) return it }
+        // Reuse Home's song list when it's there (no second full read).
+        val songs = HomeCache.data?.allTracks?.takeIf { it.isNotEmpty() } ?: client.getTrackIndex()
         val map = HashMap<String, Track>()
-        client.getTracks().forEach { t ->
+        songs.forEach { t ->
             (t.artists + t.albumArtist).filter { it.isNotBlank() }.forEach { artist ->
                 map.putIfAbsent(key(artist, t.title), t)
             }
@@ -526,5 +541,27 @@ object LibraryIndex {
         cached = map
         builtAt = now
         return map
+    }
+}
+
+/** Genre pages opened recently (10 min): reopening one is instant. */
+object GenrePageCache {
+    private const val TTL_MS = 10 * 60_000L
+
+    data class Page(
+        val topSongs: List<DzTrack>,
+        val owned: Map<Long, Track>,
+        val albums: List<Album>,
+        val tracks: List<Track>,
+        val at: Long = System.currentTimeMillis()
+    )
+
+    private val pages = java.util.concurrent.ConcurrentHashMap<String, Page>()
+
+    fun get(key: String): Page? =
+        pages[key]?.takeIf { System.currentTimeMillis() - it.at < TTL_MS }
+
+    fun put(key: String, page: Page) {
+        pages[key] = page
     }
 }
