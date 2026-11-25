@@ -164,7 +164,9 @@ data class DzTrack(
     /** 30-second preview (expires after a few hours; refetch on failure). */
     val previewUrl: String? = null,
     /** Large (1000 px) album cover, for backdrops. */
-    val bigCoverUrl: String? = null
+    val bigCoverUrl: String? = null,
+    /** Large artist photo, for the genre backdrop. */
+    val artistPictureUrl: String? = null
 )
 
 /** One of Deezer's main genres (Pop, Latin, Christian, …). */

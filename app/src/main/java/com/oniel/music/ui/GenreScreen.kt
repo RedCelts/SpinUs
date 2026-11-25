@@ -150,7 +150,15 @@ fun GenreScreen(
             .fadeDown(solidUntil = 0.4f)
             .background(Brush.verticalGradient(listOf(color, color.copy(alpha = 0.55f))))
     ) {
-        val topThree = topSongs.take(3).mapNotNull { it.bigCoverUrl ?: it.coverUrl }
+        // Artist photos of the top 3 *different* artists (a repeat
+        // artist is skipped for the next one down the chart).
+        val topThree = topSongs
+            .filter { !it.artistPictureUrl.isNullOrBlank() }
+            .distinctBy { matchKey(it.artist) }
+            .take(3)
+            .mapNotNull { it.artistPictureUrl }
+            // No artist photos at all: fall back to the top covers.
+            .ifEmpty { topSongs.take(3).mapNotNull { it.bigCoverUrl ?: it.coverUrl } }
         if (topThree.isNotEmpty()) {
             TopThreeBackdrop(
                 urls = topThree,
@@ -301,8 +309,8 @@ fun GenreScreen(
 }
 
 /**
- * The genre's top three covers blended into one backdrop: each cover
- * spans its third (plus overlap) and fades into its neighbours, then the
+ * The genre's top three artists' photos blended into one backdrop: each
+ * photo spans its third (plus overlap) and fades into its neighbours, then the
  * whole is softened, pushed toward the genre colour, darkened at the top
  * for the back button and faded into the page at the bottom.
  */

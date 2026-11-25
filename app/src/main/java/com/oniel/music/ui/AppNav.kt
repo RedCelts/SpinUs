@@ -433,16 +433,7 @@ fun OnielMusicApp() {
                         }
                     }
                 }
-                // Frosted strip behind the (transparent) status bar.
-                FadingGlass(
-                    state = hazeState,
-                    tint = pageBackground,
-                    fadeTowardTop = false,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
-                        .windowInsetsTopHeight(WindowInsets.statusBars.add(WindowInsets(top = 36.dp)))
-                )
+                // Status bar: nothing behind it — 100% see-through.
             }
         }
     }

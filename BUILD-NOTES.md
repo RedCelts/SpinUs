@@ -667,3 +667,10 @@ the v1.2 script.)
   list scrolls over them (`headerScrollFraction`, read in graphicsLayer).
   `BackdropHeader` is now just the see-through first list item holding
   the cover/title/back button. The player backdrop fades down too.
+
+## v1.3.3 — Genre backdrop from artist photos; clear status bar (2026-11-24)
+- Genre backdrop blends the photos (Deezer `picture_xl`) of the top 3
+  *different* artists in the chart — a repeat artist is skipped for the
+  next one down. Placeholder photos (empty hash) are ignored; with no
+  photos at all it falls back to the top covers.
+- Removed the status-bar glass strip: the status bar is 100% see-through.

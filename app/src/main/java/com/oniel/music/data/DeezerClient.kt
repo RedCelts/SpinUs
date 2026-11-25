@@ -113,7 +113,12 @@ class DeezerClient(private val http: OkHttpClient) {
         link = optString("link").ifBlank { null },
         durationSec = optInt("duration"),
         previewUrl = optString("preview").ifBlank { null },
-        bigCoverUrl = optJSONObject("album")?.optString("cover_xl")?.ifBlank { null }
+        bigCoverUrl = optJSONObject("album")?.optString("cover_xl")?.ifBlank { null },
+        artistPictureUrl = optJSONObject("artist")?.let {
+            it.optString("picture_xl").ifBlank { it.optString("picture_big") }
+                // No photo: Deezer returns a placeholder with an empty hash.
+                .takeUnless { url -> url.isBlank() || url.contains("/artist//") }
+        }
     )
 
     private fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }
