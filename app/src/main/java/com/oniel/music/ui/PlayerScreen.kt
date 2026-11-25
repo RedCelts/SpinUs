@@ -3,6 +3,7 @@ package com.oniel.music.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -474,20 +475,47 @@ private fun SeekBar(player: PlayerController) {
     var dragPosition by remember { mutableStateOf<Float?>(null) }
     val duration = player.durationMs.coerceAtLeast(1L)
     val shown = dragPosition ?: player.positionMs.toFloat()
+    val density = LocalDensity.current
+    val thumbHalfPx = with(density) { 10.dp.toPx() }
     Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp)) {
-        Slider(
-            value = shown.coerceIn(0f, duration.toFloat()),
-            onValueChange = { dragPosition = it },
-            onValueChangeFinished = {
-                dragPosition?.let { player.seekTo(it.toLong()) }
-                dragPosition = null
-            },
-            valueRange = 0f..duration.toFloat(),
-            colors = SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary
+        Box {
+            // The slider only draws; a layer on top takes the touches.
+            Slider(
+                value = shown.coerceIn(0f, duration.toFloat()),
+                onValueChange = { },
+                valueRange = 0f..duration.toFloat(),
+                colors = SliderDefaults.colors(
+                    thumbColor = MaterialTheme.colorScheme.primary,
+                    activeTrackColor = MaterialTheme.colorScheme.primary
+                )
             )
-        )
+            // Seeking happens only on a left/right drag. A tap, or a swipe
+            // up/down that starts on the bar (scrolling, closing the
+            // player), never moves the song.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .pointerInput(duration) {
+                        fun valueAt(x: Float): Float {
+                            val track = (size.width - 2 * thumbHalfPx).coerceAtLeast(1f)
+                            val fraction = ((x - thumbHalfPx) / track).coerceIn(0f, 1f)
+                            return fraction * duration
+                        }
+                        detectHorizontalDragGestures(
+                            onDragStart = { offset -> dragPosition = valueAt(offset.x) },
+                            onHorizontalDrag = { change, _ ->
+                                change.consume()
+                                dragPosition = valueAt(change.position.x)
+                            },
+                            onDragEnd = {
+                                dragPosition?.let { player.seekTo(it.toLong()) }
+                                dragPosition = null
+                            },
+                            onDragCancel = { dragPosition = null }
+                        )
+                    }
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween

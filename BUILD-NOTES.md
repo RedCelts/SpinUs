@@ -718,3 +718,6 @@ the v1.2 script.)
 - Songs tab → "Singles": only songs with no album, or from a release with
   1–3 of its songs in the library (single + remix); full-album songs are
   left out (they're under Albums). Empty-state text when there are none.
+- Player seek bar: the Slider only draws; a layer on top seeks with
+  `detectHorizontalDragGestures` only. Taps and up/down swipes that start
+  on the bar no longer move the song (they scroll / close the player).
