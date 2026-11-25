@@ -78,7 +78,7 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(Color.WHITE)
         }
         val title = TextView(this).apply {
-            text = "Oniel Music couldn't start"
+            text = "SpinUs couldn't start"
             textSize = 20f
             setTextColor(Color.BLACK)
             gravity = Gravity.CENTER

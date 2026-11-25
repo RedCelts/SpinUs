@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Oniel Music</string>
+    <string name="app_name">SpinUs</string>
     <string name="back">Back</string>
     <string name="cancel">Cancel</string>
     <string name="done">Done</string>
@@ -156,7 +156,7 @@
     <string name="settings_change_server_save">Save and sign in again</string>
     <string name="settings_log_out">Log out</string>
     <string name="settings_log_out_confirm">You will need to sign in again to listen to your music.</string>
-    <string name="settings_version">Oniel Music version %1$s</string>
+    <string name="settings_version">SpinUs version %1$s</string>
     <string name="settings_playback">Playback</string>
     <string name="settings_crossfade">Crossfade</string>
     <string name="settings_crossfade_seconds">%1$d seconds</string>
@@ -200,7 +200,7 @@
     <string name="stats_note_30s">A play counts after 30 seconds of real listening. Minutes are estimated from song lengths. History follows your account to any phone.</string>
     <string name="friend_stats_title">%1$s\'s stats</string>
     <string name="friend_stats_asking">Asking %1$s\'s app…</string>
-    <string name="friend_stats_failed">Couldn\'t get %1$s\'s stats. Their Oniel Music app needs to be open with stats sharing on.</string>
+    <string name="friend_stats_failed">Couldn\'t get %1$s\'s stats. Their SpinUs app needs to be open with stats sharing on.</string>
     <string name="friend_stats_button">Stats</string>
     <string name="retry">Try again</string>
     <string name="close">Close</string>

@@ -816,3 +816,14 @@ families by time of day. Tracks now carry `genres` + `year`
   crossfade) plus the Auto ones.
 - Sideloaded apps are hidden in Android Auto until "Unknown sources" is
   enabled in Android Auto's developer settings.
+
+### v1.6.0 also: renamed to **SpinUs**, new icon
+- `app_name` = SpinUs (launcher, Android Auto, settings, crash report);
+  Jellyfin client name = "SpinUs" (dashboard / sessions). Friends still
+  running "Oniel Music" count as the same app (`APP_CLIENT_NAMES`).
+  Package id stays `com.oniel.music`, so it updates in place.
+- Icon: the S-vinyl logo, cut from the magenta background with a circular
+  anti-aliased mask; adaptive foreground = logo at 72 dp on the 108 dp
+  canvas (fills the launcher's mask), background #0A0F10; legacy square
+  (dark rounded square) and round icons for every density.
+- Release APK is now `SpinUs-v<version>.apk`, titled "SpinUs …".

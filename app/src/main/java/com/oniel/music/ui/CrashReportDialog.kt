@@ -29,7 +29,7 @@ fun CrashReportDialog() {
     val text = report ?: return
     AlertDialog(
         onDismissRequest = { },
-        title = { Text("Oniel Music crashed last time") },
+        title = { Text("SpinUs crashed last time") },
         text = {
             Text(
                 text = text,
@@ -45,7 +45,7 @@ fun CrashReportDialog() {
             Button(onClick = {
                 val send = Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
-                    .putExtra(Intent.EXTRA_SUBJECT, "Oniel Music crash report")
+                    .putExtra(Intent.EXTRA_SUBJECT, "SpinUs crash report")
                     .putExtra(Intent.EXTRA_TEXT, text)
                 context.startActivity(Intent.createChooser(send, "Share crash report"))
                 CrashLog.clear(context)

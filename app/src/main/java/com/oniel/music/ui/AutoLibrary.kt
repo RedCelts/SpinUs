@@ -120,7 +120,7 @@ class AutoLibrary(private val context: Context) {
 
     // ---- Browse ----
 
-    fun root(): MediaItem = folder(ROOT, "Oniel Music", grid = false)
+    fun root(): MediaItem = folder(ROOT, "SpinUs", grid = false)
 
     suspend fun children(parentId: String): List<MediaItem> {
         val c = client() ?: return emptyList()

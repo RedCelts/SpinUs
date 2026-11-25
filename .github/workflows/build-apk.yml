@@ -36,21 +36,21 @@ jobs:
         run: |
           VERSION=$(grep -oP 'versionName "\K[^"]+' app/build.gradle)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          cp app/build/outputs/apk/debug/app-debug.apk "OnielMusic-v$VERSION.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "SpinUs-v$VERSION.apk"
           APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
-          "$APKSIGNER" verify --print-certs "OnielMusic-v$VERSION.apk" | grep -i "SHA-256"
-          ls -la "OnielMusic-v$VERSION.apk"
+          "$APKSIGNER" verify --print-certs "SpinUs-v$VERSION.apk" | grep -i "SHA-256"
+          ls -la "SpinUs-v$VERSION.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: OnielMusic-v${{ env.VERSION }}
-          path: OnielMusic-v${{ env.VERSION }}.apk
+          name: SpinUs-v${{ env.VERSION }}
+          path: SpinUs-v${{ env.VERSION }}.apk
       - name: Publish as a GitHub Release (download it on the phone)
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="v$VERSION-build${{ github.run_number }}"
-          gh release create "$TAG" "OnielMusic-v$VERSION.apk" \
-            --title "Oniel Music $VERSION (build ${{ github.run_number }})" \
+          gh release create "$TAG" "SpinUs-v$VERSION.apk" \
+            --title "SpinUs $VERSION (build ${{ github.run_number }})" \
             --notes "Debug build from ${{ github.sha }}. Installs over the app already on the phone (same signing key)." \
             --target "${{ github.sha }}"

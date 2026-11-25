@@ -46,7 +46,9 @@ class JellyfinClient(
     private val deviceId: String = UUID.randomUUID().toString()
 ) {
     companion object {
-        const val CLIENT_NAME = "Oniel Music"
+        const val CLIENT_NAME = "SpinUs"
+        /** Earlier name: friends on older versions still count as the same app. */
+        val APP_CLIENT_NAMES = setOf(CLIENT_NAME, "Oniel Music")
         /** Session-message headers for stats sharing between Oniel Music apps. */
         const val STATS_REQUEST = "onielmusic:stats-request"
         const val STATS_REPLY = "onielmusic:stats-reply"
@@ -817,7 +819,7 @@ class JellyfinClient(
                 runTimeTicks = nowPlaying.optLong("RunTimeTicks", 0L),
                 sessionIds = userSessions.map { it.getString("Id") },
                 onielSessionIds = userSessions
-                    .filter { it.optString("Client") == CLIENT_NAME }
+                    .filter { it.optString("Client") in APP_CLIENT_NAMES }
                     .map { it.getString("Id") }
             )
         }
