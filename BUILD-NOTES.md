@@ -774,3 +774,17 @@ families by time of day. Tracks now carry `genres` + `year`
   ≥ 75% or never skip). 50 songs target, max 3 per artist (the core artist
   of an artist mix is the exception), no songs < 90 s; a mix needs ≥ 20
   songs to show. Cards: 2×2 cover collage.
+
+## v1.5.1 — Styles, genre albums row, player gestures + heart + sticky controls (2026-11-25)
+- Browse all adds Dancehall, Bachata, Merengue (after Latin). Deezer has
+  no genre for them: `styleTopTracks` takes the best "<style> hits"
+  playlist (≥ 20 songs, title names the style) and orders its songs by
+  Deezer `rank` (current popularity), top 50. Route carries `style`.
+- Genre page "Your albums" is a horizontal row (swipe left/right).
+- Player: swipe down anywhere closes it once the list is at the top
+  (nested-scroll connection moves the sheet; > ¼ screen or a fast fling
+  closes, else it springs back; scrolling up first takes the sheet back).
+- Player heart next to the title: add to / remove from Liked (favorite).
+- Sticky controls: when the big controls (item 3) scroll away, a compact
+  card slides down at the top — cover, title, heart, prev/play/next,
+  progress line; tap it to scroll back up.

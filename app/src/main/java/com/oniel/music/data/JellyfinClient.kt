@@ -50,7 +50,7 @@ class JellyfinClient(
         /** Session-message headers for stats sharing between Oniel Music apps. */
         const val STATS_REQUEST = "onielmusic:stats-request"
         const val STATS_REPLY = "onielmusic:stats-reply"
-        const val CLIENT_VERSION = "1.5.0"
+        const val CLIENT_VERSION = "1.5.1"
         /** Track ids per playlist request (keeps the URL short). */
         private const val PLAYLIST_CHUNK = 100
         /**

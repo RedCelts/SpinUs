@@ -166,7 +166,9 @@ data class DzTrack(
     /** Large (1000 px) album cover, for backdrops. */
     val bigCoverUrl: String? = null,
     /** Large artist photo, for the genre backdrop. */
-    val artistPictureUrl: String? = null
+    val artistPictureUrl: String? = null,
+    /** Deezer popularity (higher = more played right now). */
+    val rank: Int = 0
 )
 
 /** One of Deezer's main genres (Pop, Latin, Christian, …). */

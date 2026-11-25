@@ -93,6 +93,26 @@ class DeezerClient(private val http: OkHttpClient) {
         get("/chart/$genreId/tracks?limit=$limit").optJSONArray("data")
             ?.objects()?.map { it.toTrack() }.orEmpty()
 
+    /**
+     * Top songs for a style Deezer has no genre for (Dancehall, Bachata,
+     * Merengue…): its biggest "<style> hits" playlist, songs ordered by
+     * Deezer's current popularity.
+     */
+    suspend fun styleTopTracks(style: String, limit: Int = 50): List<DzTrack> {
+        val q = URLEncoder.encode("$style hits", "UTF-8")
+        val playlists = get("/search/playlist?q=$q&limit=10").optJSONArray("data")?.objects().orEmpty()
+        val best = playlists
+            .filter { it.optInt("nb_tracks") >= 20 }
+            .firstOrNull { it.optString("title").contains(style, ignoreCase = true) }
+            ?: playlists.firstOrNull()
+            ?: return emptyList()
+        return get("/playlist/${best.optLong("id")}/tracks?limit=100").optJSONArray("data")
+            ?.objects()?.map { it.toTrack() }.orEmpty()
+            .distinctBy { it.id }
+            .sortedByDescending { it.rank }
+            .take(limit)
+    }
+
     /** A fresh preview URL for one Deezer track (old ones expire). */
     suspend fun trackPreview(trackId: Long): String? =
         get("/track/$trackId").optString("preview").ifBlank { null }
@@ -118,7 +138,8 @@ class DeezerClient(private val http: OkHttpClient) {
             it.optString("picture_xl").ifBlank { it.optString("picture_big") }
                 // No photo: Deezer returns a placeholder with an empty hash.
                 .takeUnless { url -> url.isBlank() || url.contains("/artist//") }
-        }
+        },
+        rank = optInt("rank")
     )
 
     private fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }

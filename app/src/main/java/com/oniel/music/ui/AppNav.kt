@@ -69,13 +69,14 @@ private object Routes {
     const val PLAYER = "player"
     const val STATS = "stats"
     const val ARTIST = "artist?id={id}&name={name}"
-    const val GENRE = "genre?id={id}&dz={dz}&name={name}"
+    const val GENRE = "genre?id={id}&dz={dz}&style={style}&name={name}"
 
     fun library(tab: Int) = "library/$tab"
     fun album(albumId: String) = "album/$albumId"
     /** A Browse genre: a library genre id and/or a Deezer main-genre id. */
-    fun genre(id: String?, dzId: Long?, name: String) =
-        "genre?id=${android.net.Uri.encode(id.orEmpty())}&dz=${dzId ?: -1L}&name=${android.net.Uri.encode(name)}"
+    fun genre(id: String?, dzId: Long?, name: String, style: String? = null) =
+        "genre?id=${android.net.Uri.encode(id.orEmpty())}&dz=${dzId ?: -1L}" +
+            "&style=${android.net.Uri.encode(style.orEmpty())}&name=${android.net.Uri.encode(name)}"
     fun artist(id: String?, name: String) =
         "artist?id=${android.net.Uri.encode(id.orEmpty())}&name=${android.net.Uri.encode(name)}"
 }
@@ -327,7 +328,7 @@ fun OnielMusicApp() {
                                     },
                                     onTrackPlayed = { navController.navigate(Routes.PLAYER) },
                                     onArtistClick = { name -> openArtist(null, name) },
-                                    onGenreClick = { id, dzId, name -> navController.navigate(Routes.genre(id, dzId, name)) }
+                                    onGenreClick = { id, dzId, name, style -> navController.navigate(Routes.genre(id, dzId, name, style)) }
                                 )
                             }
                             composable(
@@ -335,12 +336,14 @@ fun OnielMusicApp() {
                                 arguments = listOf(
                                     navArgument("id") { type = NavType.StringType; defaultValue = "" },
                                     navArgument("dz") { type = NavType.LongType; defaultValue = -1L },
+                                navArgument("style") { type = NavType.StringType; defaultValue = "" },
                                     navArgument("name") { type = NavType.StringType; defaultValue = "" }
                                 )
                             ) { entry ->
                                 GenreScreen(
                                     genreId = entry.arguments?.getString("id")?.ifBlank { null },
                                     deezerGenreId = entry.arguments?.getLong("dz")?.takeIf { it >= 0L },
+                                deezerStyle = entry.arguments?.getString("style")?.ifBlank { null },
                                     genreName = entry.arguments?.getString("name").orEmpty(),
                                     client = client,
                                     player = player,

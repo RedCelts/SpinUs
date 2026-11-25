@@ -79,7 +79,7 @@ fun SearchScreen(
     onTrackPlayed: () -> Unit,
     onArtistClick: (String) -> Unit = {},
     /** A Browse tile: a Deezer main genre (dzId) or, offline, a library genre (jfId). */
-    onGenreClick: (jfId: String?, dzId: Long?, name: String) -> Unit = { _, _, _ -> }
+    onGenreClick: (jfId: String?, dzId: Long?, name: String, style: String?) -> Unit = { _, _, _, _ -> }
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     val scope = rememberCoroutineScope()
@@ -91,7 +91,13 @@ fun SearchScreen(
         // genre tags are the fallback when Deezer can't be reached.
         val main = try { sharedDeezer.mainGenres() } catch (e: Exception) { emptyList() }
         genres = if (main.isNotEmpty()) {
-            main.map { BrowseGenre(it.name, it.pictureUrl, dzId = it.id, jfId = null) }
+            val tiles = main.map { BrowseGenre(it.name, it.pictureUrl, dzId = it.id, jfId = null) }.toMutableList()
+            // Styles Deezer has no genre for: charts from their top playlists.
+            val extra = ExtraStyles.filter { style -> tiles.none { it.name.equals(style, ignoreCase = true) } }
+                .map { BrowseGenre(it, null, dzId = null, jfId = null, style = it) }
+            val at = tiles.indexOfFirst { it.name.contains("latin", ignoreCase = true) }
+            if (at >= 0) tiles.addAll(at + 1, extra) else tiles.addAll(extra)
+            tiles
         } else {
             try {
                 client.getMusicGenres().map { g ->
@@ -355,7 +361,7 @@ fun SearchScreen(
 private fun GenreBrowser(
     genres: List<BrowseGenre>?,
     client: JellyfinClient,
-    onGenreClick: (jfId: String?, dzId: Long?, name: String) -> Unit
+    onGenreClick: (jfId: String?, dzId: Long?, name: String, style: String?) -> Unit
 ) {
     when {
         genres == null -> Box(
@@ -387,11 +393,11 @@ private fun GenreBrowser(
                     modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
                 )
             }
-            items(genres, key = { "${it.dzId}|${it.jfId}|${it.name}" }) { genre ->
+            items(genres, key = { "${it.dzId}|${it.jfId}|${it.style}|${it.name}" }) { genre ->
                 GenreTile(
                     name = genre.name,
                     imageUrl = genre.imageUrl,
-                    onClick = { onGenreClick(genre.jfId, genre.dzId, genre.name) }
+                    onClick = { onGenreClick(genre.jfId, genre.dzId, genre.name, genre.style) }
                 )
             }
         }
@@ -403,8 +409,13 @@ data class BrowseGenre(
     val name: String,
     val imageUrl: String?,
     val dzId: Long?,
-    val jfId: String?
+    val jfId: String?,
+    /** A style without a Deezer genre (chart from its top playlist). */
+    val style: String? = null
 )
+
+/** Styles added to Browse all next to Deezer's main genres. */
+val ExtraStyles = listOf("Dancehall", "Bachata", "Merengue")
 
 @Composable
 fun GenreTile(

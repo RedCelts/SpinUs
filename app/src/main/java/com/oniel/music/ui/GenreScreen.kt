@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.items
@@ -83,13 +84,15 @@ fun GenreScreen(
     genreId: String?,
     deezerGenreId: Long?,
     genreName: String,
+    /** A style without a Deezer genre (Dancehall…): chart from its top playlist. */
+    deezerStyle: String? = null,
     client: JellyfinClient,
     player: PlayerController,
     onBack: () -> Unit,
     onAlbumClick: (String) -> Unit,
     onTrackPlayed: () -> Unit
 ) {
-    val cacheKey = "${genreId}|${deezerGenreId}|$genreName"
+    val cacheKey = "${genreId}|${deezerGenreId}|${deezerStyle}|$genreName"
     val cached = GenrePageCache.get(cacheKey)
     var topSongs by remember { mutableStateOf(cached?.topSongs.orEmpty()) }
     var owned by remember { mutableStateOf(cached?.owned.orEmpty()) }
@@ -105,9 +108,13 @@ fun GenreScreen(
         coroutineScope {
             // 1) The chart, shown as soon as it arrives.
             val chart = async {
-                val list = if (deezerGenreId != null) {
-                    try { sharedDeezer.genreTopTracks(deezerGenreId) } catch (e: Exception) { emptyList() }
-                } else emptyList()
+                val list = when {
+                    deezerGenreId != null ->
+                        try { sharedDeezer.genreTopTracks(deezerGenreId) } catch (e: Exception) { emptyList() }
+                    deezerStyle != null ->
+                        try { sharedDeezer.styleTopTracks(deezerStyle) } catch (e: Exception) { emptyList() }
+                    else -> emptyList()
+                }
                 topSongs = list
                 loading = false
                 list
@@ -298,20 +305,19 @@ fun GenreScreen(
 
         if (albums.isNotEmpty()) {
             item { SectionTitle(stringResource(R.string.genre_your_albums)) }
-            items(albums.chunked(2)) { pair ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 8.dp),
+            // Swipe left / right through your albums.
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    pair.forEach { album ->
+                    items(albums, key = { it.id }) { album ->
                         AlbumCard(
                             title = album.name,
                             subtitle = album.artist,
                             imageUrl = try { client.albumArtUrl(album, 400) } catch (e: Exception) { null },
                             onClick = { onAlbumClick(album.id) },
-                            cardWidth = 156.dp
+                            cardWidth = 150.dp
                         )
                     }
                 }

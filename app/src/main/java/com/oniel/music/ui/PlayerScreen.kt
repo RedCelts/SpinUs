@@ -1,6 +1,21 @@
 package com.oniel.music.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -143,11 +158,81 @@ fun PlayerScreen(
         return
     }
 
-    val dragOffset = remember { androidx.compose.animation.core.Animatable(0f) }
+    // How far the whole player has been pulled down (closes past a quarter).
+    var sheetOffset by remember { mutableStateOf(0f) }
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
     val screenHeightPx = with(density) {
         LocalConfiguration.current.screenHeightDp.dp.toPx()
+    }
+
+    fun settleSheet(velocityY: Float = 0f) {
+        scope.launch {
+            if (sheetOffset > screenHeightPx / 4f || velocityY > 2500f) {
+                onMinimize()
+            } else {
+                androidx.compose.animation.core.animate(sheetOffset, 0f) { value, _ -> sheetOffset = value }
+            }
+        }
+    }
+    // Swipe down anywhere: once the list is at the top, the rest of a
+    // downward drag pulls the player down instead.
+    val dismissScroll = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (sheetOffset > 0f && available.y < 0f) {
+                    val next = (sheetOffset + available.y).coerceAtLeast(0f)
+                    val used = next - sheetOffset
+                    sheetOffset = next
+                    return Offset(0f, used)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f && source == NestedScrollSource.Drag) {
+                    sheetOffset += available.y
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (sheetOffset > 0f) {
+                    settleSheet(available.y)
+                    return available
+                }
+                return Velocity.Zero
+            }
+        }
+    }
+    val listState = rememberLazyListState()
+    // The controls row is item 3; once it scrolls away, a compact
+    // controls card drops down at the top.
+    val showStickyControls by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 3 ||
+                (listState.firstVisibleItemIndex == 3 && listState.firstVisibleItemScrollOffset > 40)
+        }
+    }
+
+    // Liked (favorite) state of the current song, for the heart.
+    var liked by remember(track.id) { mutableStateOf(client.favoriteOverride(track.id) ?: track.isFavorite) }
+    LaunchedEffect(track.id) {
+        liked = try { client.isFavorite(track.id) } catch (e: Exception) { liked }
+    }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val toggleLike: () -> Unit = {
+        val want = !liked
+        liked = want
+        scope.launch {
+            try {
+                client.setFavorite(track.id, want)
+            } catch (e: Exception) {
+                liked = !want
+                android.widget.Toast.makeText(context, R.string.action_failed, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     val coverUrl = client.trackArtUrl(track, 600)
@@ -157,11 +242,14 @@ fun PlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .offset { IntOffset(0, dragOffset.value.roundToInt()) }
+            .offset { IntOffset(0, sheetOffset.roundToInt()) }
     ) {
     ScreenBackdrop(backdropUrl = backdropUrl, fallbackUrl = coverUrl)
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        state = listState,
+        modifier = Modifier
+            .fillMaxSize()
+            .nestedScroll(dismissScroll),
         contentPadding = PaddingValues(bottom = bottomChromePadding())
     ) {
         item {
@@ -173,21 +261,9 @@ fun PlayerScreen(
                     .pointerInput(Unit) {
                         detectVerticalDragGestures(
                             onVerticalDrag = { _, dragAmount ->
-                                scope.launch {
-                                    val next = (dragOffset.value + dragAmount)
-                                        .coerceAtLeast(0f)
-                                    dragOffset.snapTo(next)
-                                }
+                                sheetOffset = (sheetOffset + dragAmount).coerceAtLeast(0f)
                             },
-                            onDragEnd = {
-                                scope.launch {
-                                    if (dragOffset.value > screenHeightPx / 3f) {
-                                        onMinimize()
-                                    } else {
-                                        dragOffset.animateTo(0f)
-                                    }
-                                }
-                            }
+                            onDragEnd = { settleSheet() }
                         )
                     },
                 horizontalAlignment = Alignment.CenterHorizontally
@@ -250,11 +326,13 @@ fun PlayerScreen(
         }
 
         item {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
+                    .padding(start = 24.dp, end = 12.dp),
+                verticalAlignment = Alignment.Top
             ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = track.title,
                     style = MaterialTheme.typography.headlineSmall,
@@ -300,6 +378,9 @@ fun PlayerScreen(
                     listOf(albumDetails?.year?.toString(), genres.firstOrNull()),
                     modifier = Modifier.padding(top = 2.dp)
                 )
+            }
+            // Heart: add to / remove from Liked.
+            LikeButton(liked = liked, onClick = toggleLike)
             }
         }
 
@@ -437,6 +518,22 @@ fun PlayerScreen(
         }
     }
 
+    // Compact controls, anchored to the top once the big ones scroll away.
+    AnimatedVisibility(
+        visible = showStickyControls,
+        enter = slideInVertically { -it } + fadeIn(),
+        exit = slideOutVertically { -it } + fadeOut(),
+        modifier = Modifier.align(Alignment.TopCenter)
+    ) {
+        StickyControls(
+            track = track,
+            coverUrl = client.trackArtUrl(track, 200),
+            player = player,
+            liked = liked,
+            onLike = toggleLike,
+            onTap = { scope.launch { listState.animateScrollToItem(0) } }
+        )
+    }
     }
 
     if (showAddToPlaylist) {
@@ -590,6 +687,95 @@ fun FullLyricsScreen(
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun LikeButton(liked: Boolean, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = if (liked) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+            contentDescription = stringResource(if (liked) R.string.action_unfavorite else R.string.action_favorite),
+            tint = if (liked) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(28.dp)
+        )
+    }
+}
+
+/** Small card at the top of the player: cover, song, heart, prev / play / next, progress. */
+@Composable
+private fun StickyControls(
+    track: Track,
+    coverUrl: String?,
+    player: PlayerController,
+    liked: Boolean,
+    onLike: () -> Unit,
+    onTap: () -> Unit
+) {
+    androidx.compose.material3.Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clickable(onClick = onTap),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.96f),
+        shadowElevation = 8.dp
+    ) {
+        Column {
+            Row(
+                modifier = Modifier.padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CoverImage(url = coverUrl, modifier = Modifier.size(44.dp), cornerDp = 8.dp)
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = track.artists.joinToString(", ").ifEmpty { track.albumArtist },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                LikeButton(liked = liked, onClick = onLike)
+                IconButton(onClick = { player.previous() }) {
+                    PrevGlyph(modifier = Modifier.size(22.dp))
+                }
+                IconButton(
+                    onClick = { player.togglePlayPause() },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                ) {
+                    if (player.isPlaying) {
+                        PauseGlyph(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    } else {
+                        PlayGlyph(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary)
+                    }
+                }
+                IconButton(onClick = { player.next() }) {
+                    NextGlyph(modifier = Modifier.size(22.dp))
+                }
+            }
+            val total = player.durationMs.coerceAtLeast(1L)
+            LinearProgressIndicator(
+                progress = (player.positionMs.toFloat() / total).coerceIn(0f, 1f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+            )
         }
     }
 }
