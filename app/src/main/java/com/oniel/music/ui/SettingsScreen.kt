@@ -120,6 +120,33 @@ fun SettingsScreen(
         ThemePicker(modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(24.dp))
 
+        // Stats sharing with friends.
+        run {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            var share by remember { mutableStateOf(StatsSharing.isEnabled(ctx)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_share_stats),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_share_stats_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = share,
+                    onCheckedChange = {
+                        share = it
+                        StatsSharing.setEnabled(ctx, it)
+                    }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+
         Text(
             text = stringResource(R.string.settings_playback),
             style = MaterialTheme.typography.titleMedium,
@@ -200,7 +227,7 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.3.6"),
+            text = stringResource(R.string.settings_version, "1.4.0"),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

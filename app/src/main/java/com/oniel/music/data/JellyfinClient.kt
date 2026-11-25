@@ -2,6 +2,7 @@ package com.oniel.music.data
 
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -46,7 +47,10 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.3.6"
+        /** Session-message headers for stats sharing between Oniel Music apps. */
+        const val STATS_REQUEST = "onielmusic:stats-request"
+        const val STATS_REPLY = "onielmusic:stats-reply"
+        const val CLIENT_VERSION = "1.4.0"
         /** Track ids per playlist request (keeps the URL short). */
         private const val PLAYLIST_CHUNK = 100
         /**
@@ -607,7 +611,19 @@ class JellyfinClient(
             .replaceFirst("https://", "wss://") +
             "/socket?ApiKey=$tok&deviceId=$deviceId"
         val request = Request.Builder().url(wsUrl).build()
-        presenceSocket = http.newWebSocket(request, object : WebSocketListener() {})
+        presenceSocket = http.newWebSocket(request, object : WebSocketListener() {
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                handleSocketMessage(webSocket, text)
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: okhttp3.Response?) {
+                if (presenceSocket === webSocket) presenceSocket = null
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (presenceSocket === webSocket) presenceSocket = null
+            }
+        })
         // Capabilities must be reported while the socket is open; the
         // query-param form of this call does not make the session
         // controllable, only the JSON /Full form does.
@@ -616,7 +632,8 @@ class JellyfinClient(
                 put("Audio")
                 put("Video")
             })
-            put("SupportedCommands", JSONArray())
+            // DisplayMessage carries friends' stats requests / replies.
+            put("SupportedCommands", JSONArray().apply { put("DisplayMessage") })
             put("SupportsMediaControl", true)
             put("SupportsPersistentIdentifier", true)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
@@ -625,8 +642,118 @@ class JellyfinClient(
         executeRaw(capabilities, "capabilities")
     }
 
+    // ---- Stats sharing with friends (v1.4.0) ----
+    //
+    // Rides on session messages: a friend's app sends us a DisplayMessage
+    // with header STATS_REQUEST and {id, session}; we answer the asking
+    // session with header STATS_REPLY and {id, data: summary JSON}. Only
+    // works while both apps are open (the Friends list shows only people
+    // listening right now anyway).
+
+    /** Builds this user's stats as JSON for a friend; null = not sharing. */
+    @Volatile var statsResponder: (suspend () -> String?)? = null
+
+    private val socketScope = kotlinx.coroutines.CoroutineScope(
+        kotlinx.coroutines.SupervisorJob() + Dispatchers.IO
+    )
+    private val pendingStats =
+        java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.CompletableDeferred<String?>>()
+    @Volatile private var keepAliveJob: kotlinx.coroutines.Job? = null
+
+    private fun handleSocketMessage(socket: WebSocket, text: String) {
+        try {
+            val msg = JSONObject(text)
+            when (msg.optString("MessageType")) {
+                // The server drops sockets that stay quiet: answer its
+                // keep-alive request on the interval it asks for.
+                "ForceKeepAlive" -> {
+                    val seconds = msg.optInt("Data", 60).coerceIn(10, 300)
+                    keepAliveJob?.cancel()
+                    keepAliveJob = socketScope.launch {
+                        while (true) {
+                            socket.send("{\"MessageType\":\"KeepAlive\"}")
+                            kotlinx.coroutines.delay(seconds * 1000L / 2)
+                        }
+                    }
+                }
+                "GeneralCommand" -> {
+                    val data = msg.optJSONObject("Data") ?: return
+                    if (data.optString("Name") != "DisplayMessage") return
+                    val args = data.optJSONObject("Arguments") ?: return
+                    val header = args.optString("Header")
+                    val body = args.optString("Text")
+                    when (header) {
+                        STATS_REQUEST -> answerStatsRequest(body)
+                        STATS_REPLY -> {
+                            val reply = JSONObject(body)
+                            pendingStats.remove(reply.optString("id"))?.complete(reply.optString("data"))
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Unknown or malformed message: ignore.
+        }
+    }
+
+    private fun answerStatsRequest(body: String) {
+        socketScope.launch {
+            try {
+                val req = JSONObject(body)
+                val session = req.optString("session").ifBlank { return@launch }
+                val data = statsResponder?.invoke() ?: return@launch
+                val reply = JSONObject().apply {
+                    put("id", req.optString("id"))
+                    put("data", data)
+                }.toString()
+                sendMessage(session, reply, header = STATS_REPLY, timeoutMs = 1000)
+            } catch (e: Exception) {
+                // Best-effort.
+            }
+        }
+    }
+
+    /** This app's own session id (for friends to answer to). */
+    private suspend fun ownSessionId(): String? {
+        val body = executeRaw(
+            authedRequest("/Sessions?DeviceId=${URLEncoder.encode(deviceId, "UTF-8")}").get().build(),
+            "own session"
+        ) ?: return null
+        val array = JSONArray(body)
+        return if (array.length() > 0) array.getJSONObject(0).optString("Id").ifBlank { null } else null
+    }
+
+    /**
+     * Ask a friend's app for their listening stats. Returns the summary
+     * JSON, or null if they don't answer within [timeoutMs] (app closed,
+     * sharing off, or no permission to message them).
+     */
+    suspend fun requestFriendStats(friend: FriendSession, timeoutMs: Long = 8000): String? {
+        if (presenceSocket == null) connectPresence()
+        val mySession = ownSessionId() ?: return null
+        val id = UUID.randomUUID().toString()
+        val waiter = kotlinx.coroutines.CompletableDeferred<String?>()
+        pendingStats[id] = waiter
+        try {
+            val req = JSONObject().apply {
+                put("id", id)
+                put("session", mySession)
+            }.toString()
+            // Only Oniel Music sessions: other apps would show the raw text.
+            if (friend.onielSessionIds.isEmpty()) return null
+            friend.onielSessionIds.forEach { sid ->
+                try { sendMessage(sid, req, header = STATS_REQUEST, timeoutMs = 1000) } catch (e: Exception) { }
+            }
+            return kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { waiter.await() }
+        } finally {
+            pendingStats.remove(id)
+        }
+    }
+
     /** Close the presence WebSocket opened by [connectPresence]. */
     fun closePresence() {
+        keepAliveJob?.cancel()
+        keepAliveJob = null
         presenceSocket?.close(1000, "closing")
         presenceSocket = null
     }
@@ -674,7 +801,10 @@ class JellyfinClient(
                 imageTag = nowPlaying.optStringOrNull("AlbumPrimaryImageTag"),
                 positionTicks = playState?.optLong("PositionTicks", 0L) ?: 0L,
                 runTimeTicks = nowPlaying.optLong("RunTimeTicks", 0L),
-                sessionIds = userSessions.map { it.getString("Id") }
+                sessionIds = userSessions.map { it.getString("Id") },
+                onielSessionIds = userSessions
+                    .filter { it.optString("Client") == CLIENT_NAME }
+                    .map { it.getString("Id") }
             )
         }
     }
@@ -685,11 +815,16 @@ class JellyfinClient(
      * Returns normally on HTTP 204; throws [IOException] otherwise
      * (403 = the sender lacks the remote-control permission).
      */
-    suspend fun sendMessage(sessionId: String, text: String) {
+    suspend fun sendMessage(
+        sessionId: String,
+        text: String,
+        header: String = CLIENT_NAME,
+        timeoutMs: Int = 5000
+    ) {
         val body = JSONObject().apply {
             put("Text", text)
-            put("Header", CLIENT_NAME)
-            put("TimeoutMs", 5000)
+            put("Header", header)
+            put("TimeoutMs", timeoutMs)
         }.toString().toRequestBody(JSON_MEDIA_TYPE)
         val request = authedRequest("/Sessions/$sessionId/Message").post(body).build()
         executeRaw(request, "send message")

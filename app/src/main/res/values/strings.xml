@@ -186,4 +186,24 @@
     <string name="settings_theme">Theme</string>
     <string name="genre_top_50">Top 50 right now</string>
     <string name="artist_singles_label">Single</string>
+    <!-- v1.4.0 stats -->
+    <string name="stats_period_week">This week</string>
+    <string name="stats_period_month">30 days</string>
+    <string name="stats_period_all">All time</string>
+    <string name="stats_minutes_listened">minutes listened</string>
+    <string name="stats_plays_pill">%1$d plays</string>
+    <string name="stats_artists_pill">%1$d artists</string>
+    <string name="stats_streak_pill">🔥 %1$d-day streak</string>
+    <string name="stats_number_one">#1 ARTIST</string>
+    <string name="stats_weekly_minutes">Minutes per week</string>
+    <string name="stats_nothing_yet">Nothing played in this period yet.</string>
+    <string name="stats_note_30s">A play counts after 30 seconds of real listening. Minutes are estimated from song lengths. History follows your account to any phone.</string>
+    <string name="friend_stats_title">%1$s\'s stats</string>
+    <string name="friend_stats_asking">Asking %1$s\'s app…</string>
+    <string name="friend_stats_failed">Couldn\'t get %1$s\'s stats. Their Oniel Music app needs to be open with stats sharing on.</string>
+    <string name="friend_stats_button">Stats</string>
+    <string name="retry">Try again</string>
+    <string name="close">Close</string>
+    <string name="settings_share_stats">Share my listening stats with friends</string>
+    <string name="settings_share_stats_desc">Friends on this server can open your stats from their Friends list while your app is open.</string>
 </resources>

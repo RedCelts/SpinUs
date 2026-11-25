@@ -76,7 +76,9 @@ data class FriendSession(
     val imageTag: String?,
     val positionTicks: Long,
     val runTimeTicks: Long,
-    val sessionIds: List<String>
+    val sessionIds: List<String>,
+    /** The ones running Oniel Music (only these can share stats). */
+    val onielSessionIds: List<String> = emptyList()
 )
 
 /** Result of a successful login. */

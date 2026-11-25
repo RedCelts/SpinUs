@@ -1,60 +1,75 @@
 package com.oniel.music.ui
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import coil.compose.AsyncImage
 import com.oniel.music.R
+import com.oniel.music.data.FriendSession
 import com.oniel.music.data.JellyfinClient
-import com.oniel.music.data.PlayLog
-import com.oniel.music.data.Track
-import com.oniel.music.data.WeekStats
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import com.oniel.music.data.ListeningStats
+import com.oniel.music.data.ListeningSummary
+import com.oniel.music.data.PeriodStats
+import com.oniel.music.data.StatItem
+import com.oniel.music.data.WeekBar
 
 /**
- * Listening stats: this week (minutes, top artist, top song), top artists
- * and songs for the week, past weeks and the day streak.
- *
- * This week comes from Jellyfin: a track counts once, from its
- * last-played date, and minutes are estimated from track lengths. Past
- * weeks and the streak come from the on-device play log, which only
- * records plays from the day the app was installed. The honest note at
- * the bottom of the screen says so.
+ * Your listening stats, from the play log (a play counts after 30 s of
+ * real listening). Reloads when plays arrive from the account sync.
  */
 @Composable
 fun StatsScreen(
@@ -62,347 +77,466 @@ fun StatsScreen(
     player: PlayerController,
     onBack: () -> Unit
 ) {
-    var loading by remember { mutableStateOf(true) }
-    var weekTracks by remember { mutableStateOf<List<Track>>(emptyList()) }
-    var pastWeeks by remember { mutableStateOf<List<WeekStats>>(emptyList()) }
-    var streakDays by remember { mutableStateOf(0) }
-
-    // Reloads when plays arrive from the account (history sync).
+    var summary by remember { mutableStateOf<ListeningSummary?>(null) }
     LaunchedEffect(player.historyVersion) {
-        val nowMs = System.currentTimeMillis()
-        val start = weekStartMs(nowMs)
-        val end = start + 7L * 24 * 60 * 60 * 1000
-        try {
-            val tracks = client.getTracks()
-            weekTracks = tracks.filter { track ->
-                val played = parseIsoToMs(track.lastPlayedDate) ?: return@filter false
-                played in start until end
-            }
-        } catch (e: Exception) {
-            weekTracks = emptyList()
-        }
-        val weeks = player.playLogWeeks()
-        pastWeeks = weeks.filter { it.weekStartMs < start }
-        streakDays = streakDaysFrom(player.playLogEntries())
-        loading = false
+        summary = try { player.buildListeningSummary() } catch (e: Exception) { null }
     }
+    StatsContent(
+        title = stringResource(R.string.stats_title),
+        summary = summary,
+        client = client,
+        onBack = onBack,
+        modifier = Modifier.statusBarsPadding()
+    )
+}
 
-    // Scrolls up under the frosted status-bar strip.
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(
-            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
-            bottom = bottomChromePadding()
-        )
+/**
+ * A friend's stats, asked for from their app (they must have Oniel Music
+ * open and sharing on). Full-screen, same look as your own.
+ */
+@Composable
+fun FriendStatsDialog(
+    friend: FriendSession,
+    client: JellyfinClient,
+    onDismiss: () -> Unit
+) {
+    var summary by remember { mutableStateOf<ListeningSummary?>(null) }
+    var failed by remember { mutableStateOf(false) }
+    var attempt by remember { mutableStateOf(0) }
+    LaunchedEffect(attempt) {
+        failed = false
+        val json = try { client.requestFriendStats(friend) } catch (e: Exception) { null }
+        summary = json?.let { ListeningStats.fromJson(it) }
+        failed = summary == null
+    }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp, end = 16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.Filled.ArrowBack,
-                        contentDescription = stringResource(R.string.back)
-                    )
-                }
-                Text(
-                    text = stringResource(R.string.stats_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-
-        if (loading) {
-            item {
-                Row(
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        ) {
+            if (failed) {
+                Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 48.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Spacer(modifier = Modifier.weight(1f))
-                    CircularProgressIndicator()
-                    Spacer(modifier = Modifier.weight(1f))
-                }
-            }
-        } else {
-            val weekStart = weekStartMs(System.currentTimeMillis())
-            val minutes = weekTracks.sumOf { ticksToMs(it.runTimeTicks) } / 60_000
-            val topArtist = weekTracks
-                .flatMap { it.artists.ifEmpty { listOf(it.albumArtist) } }
-                .groupingBy { it }
-                .eachCount()
-                .maxByOrNull { it.value }?.key
-            val topSong = weekTracks.maxWithOrNull(
-                compareBy<Track> { it.playCount }
-                    .thenBy { parseIsoToMs(it.lastPlayedDate) ?: 0L }
-            )
-            val topArtists = weekTracks
-                .flatMap { it.artists.ifEmpty { listOf(it.albumArtist) } }
-                .groupingBy { it }
-                .eachCount()
-                .entries
-                .sortedByDescending { it.value }
-                .take(5)
-            val topSongs = weekTracks
-                .sortedWith(
-                    compareByDescending<Track> { it.playCount }
-                        .thenByDescending { parseIsoToMs(it.lastPlayedDate) ?: 0L }
-                )
-                .take(5)
-
-            item {
-                Text(
-                    text = stringResource(
-                        R.string.stats_week_label,
-                        weekLabel(weekStart)
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 16.dp, top = 8.dp)
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    StatCard(
-                        label = stringResource(R.string.stats_minutes),
-                        value = minutes.toString(),
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    StatCard(
-                        label = stringResource(R.string.stats_top_artist),
-                        value = topArtist ?: "—",
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    StatCard(
-                        label = stringResource(R.string.stats_top_song),
-                        value = topSong?.title ?: "—",
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            if (weekTracks.isEmpty()) {
-                item {
                     Text(
-                        text = stringResource(R.string.stats_no_week),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        text = stringResource(R.string.friend_stats_failed, friend.userName),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center
                     )
-                }
-            }
-
-            if (topArtists.isNotEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(R.string.stats_top_artists),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp)
-                    )
-                }
-                itemsIndexed(topArtists) { index, entry ->
-                    RankedRow(
-                        rank = index + 1,
-                        title = entry.key,
-                        subtitle = stringResource(R.string.stats_plays, entry.value)
-                    )
-                }
-            }
-
-            if (topSongs.isNotEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(R.string.stats_top_songs),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
-                    )
-                }
-                itemsIndexed(topSongs) { index, track ->
-                    RankedRow(
-                        rank = index + 1,
-                        title = track.title,
-                        subtitle = track.artists.joinToString(", ")
-                    )
-                }
-            }
-
-            item {
-                Text(
-                    text = stringResource(R.string.stats_past_weeks),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
-                )
-            }
-            if (pastWeeks.isEmpty()) {
-                item {
-                    Text(
-                        text = stringResource(R.string.stats_no_past_weeks),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                }
-            } else {
-                items(pastWeeks) { week ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = week.label,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text(
-                                text = week.topSong ?: week.topArtist ?: "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        Text(
-                            text = stringResource(R.string.stats_minutes_short, week.minutes),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row {
+                        TextButton(onClick = { attempt++ }) { Text(stringResource(R.string.retry)) }
+                        TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
                     }
                 }
-            }
-
-            if (streakDays > 0) {
-                item {
-                    Text(
-                        text = stringResource(R.string.stats_streak, streakDays),
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(start = 16.dp, top = 16.dp)
-                    )
-                }
-            }
-
-            item {
-                Text(
-                    text = stringResource(R.string.stats_note),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+            } else {
+                StatsContent(
+                    title = stringResource(R.string.friend_stats_title, friend.userName),
+                    summary = summary,
+                    client = client,
+                    onBack = onDismiss,
+                    loadingText = stringResource(R.string.friend_stats_asking, friend.userName),
+                    modifier = Modifier.statusBarsPadding()
                 )
             }
         }
     }
 }
 
+private enum class StatsPeriod { WEEK, MONTH, ALL }
+
+/** The stats layout: period chips, hero card, #1 artist, top artists, top songs, weekly chart. */
 @Composable
-private fun StatCard(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+fun StatsContent(
+    title: String,
+    summary: ListeningSummary?,
+    client: JellyfinClient,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    loadingText: String? = null
+) {
+    var period by rememberSaveable { mutableStateOf(StatsPeriod.WEEK) }
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(4.dp)) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+            }
             Text(
-                text = value,
+                text = title,
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        if (summary == null) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                CircularProgressIndicator()
+                if (loadingText != null) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(loadingText, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            return@Column
+        }
+        val stats = when (period) {
+            StatsPeriod.WEEK -> summary.week
+            StatsPeriod.MONTH -> summary.month
+            StatsPeriod.ALL -> summary.allTime
+        }
+        LazyColumn(
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bottomChromePadding()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(
+                        StatsPeriod.WEEK to R.string.stats_period_week,
+                        StatsPeriod.MONTH to R.string.stats_period_month,
+                        StatsPeriod.ALL to R.string.stats_period_all
+                    ).forEach { (p, label) ->
+                        FilterChip(
+                            selected = period == p,
+                            onClick = { period = p },
+                            label = { Text(stringResource(label)) }
+                        )
+                    }
+                }
+            }
+            item { HeroCard(stats, summary.streakDays) }
+            stats.topArtists.firstOrNull()?.let { top ->
+                item { TopArtistCard(top, client) }
+            }
+            if (stats.topArtists.size > 1) {
+                item {
+                    StatsCard(title = stringResource(R.string.stats_top_artists)) {
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            contentPadding = PaddingValues(horizontal = 14.dp)
+                        ) {
+                            itemsIndexed(stats.topArtists) { index, artist ->
+                                ArtistTile(rank = index + 1, artist = artist, client = client)
+                            }
+                        }
+                    }
+                }
+            }
+            if (stats.topSongs.isNotEmpty()) {
+                item {
+                    StatsCard(title = stringResource(R.string.stats_top_songs)) {
+                        Column {
+                            stats.topSongs.forEachIndexed { index, song ->
+                                SongStatRow(rank = index + 1, song = song, client = client)
+                            }
+                        }
+                    }
+                }
+            }
+            if (stats.plays == 0) {
+                item {
+                    Text(
+                        text = stringResource(R.string.stats_nothing_yet),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            if (summary.weeks.any { it.minutes > 0 }) {
+                item {
+                    StatsCard(title = stringResource(R.string.stats_weekly_minutes)) {
+                        WeekChart(summary.weeks)
+                    }
+                }
+            }
+            item {
+                Text(
+                    text = stringResource(R.string.stats_note_30s),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+// ---- Cards ----
+
+@Composable
+private fun StatsCard(title: String, content: @Composable () -> Unit) {
+    Card(
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(vertical = 14.dp)) {
             Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp)
             )
+            content()
+        }
+    }
+}
+
+/** Big gradient card: minutes, plays, day streak. */
+@Composable
+private fun HeroCard(stats: PeriodStats, streakDays: Int) {
+    val c = MaterialTheme.colorScheme
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.large)
+            .background(Brush.linearGradient(listOf(c.primary, c.tertiary)))
+            .padding(18.dp)
+    ) {
+        Column {
+            Text(
+                text = stats.minutes.toString(),
+                fontSize = 48.sp,
+                fontWeight = FontWeight.Black,
+                color = c.onPrimary
+            )
+            Text(
+                text = stringResource(R.string.stats_minutes_listened),
+                style = MaterialTheme.typography.titleSmall,
+                color = c.onPrimary.copy(alpha = 0.85f)
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                HeroPill(stringResource(R.string.stats_plays_pill, stats.plays))
+                HeroPill(stringResource(R.string.stats_artists_pill, stats.topArtists.size))
+                if (streakDays > 0) HeroPill(stringResource(R.string.stats_streak_pill, streakDays))
+            }
         }
     }
 }
 
 @Composable
-private fun RankedRow(rank: Int, title: String, subtitle: String) {
+private fun HeroPill(text: String) {
+    val c = MaterialTheme.colorScheme
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = c.onPrimary,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(c.onPrimary.copy(alpha = 0.18f))
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    )
+}
+
+/** #1 artist: blurred photo behind, big round photo in front. */
+@Composable
+private fun TopArtistCard(artist: StatItem, client: JellyfinClient) {
+    val url = artist.imageId?.let { try { client.imageUrl(it, null, 600) } catch (e: Exception) { null } }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .clip(MaterialTheme.shapes.large)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
+    ) {
+        if (url != null) {
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .blur(24.dp)
+            )
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.35f)))
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            ArtistPhoto(name = artist.name, imageId = artist.imageId, client = client, size = 110)
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                val onImage = if (url != null) Color.White else MaterialTheme.colorScheme.onSecondaryContainer
+                Text(
+                    text = stringResource(R.string.stats_number_one),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = onImage.copy(alpha = 0.8f)
+                )
+                Text(
+                    text = artist.name,
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = onImage,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(R.string.stats_plays, artist.plays),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = onImage.copy(alpha = 0.85f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtistTile(rank: Int, artist: StatItem, client: JellyfinClient) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(92.dp)) {
+        Box {
+            ArtistPhoto(name = artist.name, imageId = artist.imageId, client = client, size = 84)
+            RankBadge(rank, Modifier.align(Alignment.TopStart).offset(x = (-2).dp, y = (-2).dp))
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = artist.name,
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = stringResource(R.string.stats_plays, artist.plays),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SongStatRow(rank: Int, song: StatItem, client: JellyfinClient) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
             text = rank.toString(),
-            style = MaterialTheme.typography.bodyLarge,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.tertiary,
+            color = if (rank <= 3) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.width(28.dp)
         )
+        CoverImage(
+            url = song.imageId?.let { try { client.imageUrl(it, null, 160) } catch (e: Exception) { null } },
+            modifier = Modifier.size(48.dp),
+            cornerDp = 6.dp,
+            contentDescription = song.name
+        )
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = title,
+                text = song.name,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                text = subtitle,
+                text = song.sub,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
         }
+        Text(
+            text = stringResource(R.string.stats_plays, song.plays),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 
-/** Epoch ms of the Monday of the week containing [nowMs]. */
-fun weekStartMs(nowMs: Long): Long {
-    val date = Instant.ofEpochMilli(nowMs)
-        .atZone(ZoneId.systemDefault())
-        .toLocalDate()
-    val monday = date.minusDays((date.dayOfWeek.value - 1).toLong())
-    return monday.atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
-}
-
-/** "Nov 17 – Nov 23" label for the week starting at [startMs]. */
-fun weekLabel(startMs: Long): String {
-    val zone = ZoneId.systemDefault()
-    val fmt = DateTimeFormatter.ofPattern("MMM d")
-    val start = Instant.ofEpochMilli(startMs).atZone(zone).toLocalDate()
-    val end = start.plusDays(6)
-    return "${start.format(fmt)} – ${end.format(fmt)}"
-}
-
-/**
- * Run of days in a row with at least one logged play, ending today (or
- * yesterday when nothing has played yet today).
- */
-fun streakDaysFrom(entries: List<PlayLog.Entry>): Int {
-    if (entries.isEmpty()) return 0
-    val zone = ZoneId.systemDefault()
-    val days = entries
-        .map { Instant.ofEpochMilli(it.timeMs).atZone(zone).toLocalDate() }
-        .toSet()
-    var day = LocalDate.now(zone)
-    if (!days.contains(day)) day = day.minusDays(1)
-    var streak = 0
-    while (days.contains(day)) {
-        streak++
-        day = day.minusDays(1)
+@Composable
+private fun RankBadge(rank: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(26.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.tertiary),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = rank.toString(),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onTertiary
+        )
     }
-    return streak
+}
+
+/** Round artist photo; initials underneath show through if there's none. */
+@Composable
+fun ArtistPhoto(name: String, imageId: String?, client: JellyfinClient, size: Int) {
+    Box(modifier = Modifier.size(size.dp).clip(CircleShape)) {
+        ListenerAvatar(userName = name, sizeDp = size.dp)
+        if (imageId != null) {
+            AsyncImage(
+                model = try { client.imageUrl(imageId, null, size * 3) } catch (e: Exception) { null },
+                contentDescription = name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+/** Minutes per week, last 8 weeks; this week highlighted. */
+@Composable
+private fun WeekChart(weeks: List<WeekBar>) {
+    val c = MaterialTheme.colorScheme
+    val max = (weeks.maxOfOrNull { it.minutes } ?: 0).coerceAtLeast(1)
+    Column(modifier = Modifier.padding(horizontal = 14.dp)) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+        ) {
+            val n = weeks.size.coerceAtLeast(1)
+            val slot = size.width / n
+            val barW = slot * 0.6f
+            weeks.forEachIndexed { i, w ->
+                val h = (w.minutes.toFloat() / max) * size.height
+                val color = if (i == weeks.lastIndex) c.tertiary else c.primary.copy(alpha = 0.55f)
+                drawRoundRect(
+                    color = color,
+                    topLeft = Offset(i * slot + (slot - barW) / 2f, size.height - h.coerceAtLeast(3f)),
+                    size = Size(barW, h.coerceAtLeast(3f)),
+                    cornerRadius = CornerRadius(6.dp.toPx())
+                )
+            }
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            weeks.forEach { w ->
+                Text(
+                    text = w.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = c.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    fontSize = 9.sp,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+    }
 }

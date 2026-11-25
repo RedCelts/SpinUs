@@ -63,6 +63,7 @@ fun FriendsSheet(
     var sessions by remember { mutableStateOf<List<FriendSession>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var emojiTarget by remember { mutableStateOf<FriendSession?>(null) }
+    var statsTarget by remember { mutableStateOf<FriendSession?>(null) }
     var sentNote by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -121,7 +122,10 @@ fun FriendsSheet(
                             imageUrl = session.albumId?.let {
                                 client.imageUrl(it, session.imageTag, 200)
                             },
-                            onClick = { emojiTarget = session }
+                            onClick = { emojiTarget = session },
+                            onStats = if (session.onielSessionIds.isNotEmpty()) {
+                                { statsTarget = session }
+                            } else null
                         )
                     }
                 }
@@ -137,6 +141,14 @@ fun FriendsSheet(
             }
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    statsTarget?.let { friend ->
+        FriendStatsDialog(
+            friend = friend,
+            client = client,
+            onDismiss = { statsTarget = null }
+        )
     }
 
     val target = emojiTarget
@@ -165,7 +177,8 @@ fun FriendsSheet(
 private fun FriendRow(
     session: FriendSession,
     imageUrl: String?,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onStats: (() -> Unit)? = null
 ) {
     Row(
         modifier = Modifier
@@ -202,6 +215,12 @@ private fun FriendRow(
                 color = MaterialTheme.colorScheme.primary,
                 trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
+        }
+        if (onStats != null) {
+            Spacer(modifier = Modifier.width(8.dp))
+            TextButton(onClick = onStats) {
+                Text(stringResource(R.string.friend_stats_button))
+            }
         }
     }
 }

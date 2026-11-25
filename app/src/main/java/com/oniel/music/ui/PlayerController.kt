@@ -44,6 +44,9 @@ import java.time.Instant
  * MainActivity creates one instance (viewModel()) and passes it to every
  * screen that plays music. Call attachClient() once a client is available.
  */
+/** Minimum real listening time before a play counts. */
+private const val MIN_PLAY_MS = 30_000L
+
 class PlayerController(application: Application) : AndroidViewModel(application) {
 
     private var client: JellyfinClient? = null
@@ -115,6 +118,10 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         }
 
     private var loggedTrackId: String? = null
+    /** Milliseconds actually listened to [listenedTrackId] (for the 30 s rule). */
+    private var listenedMs = 0L
+    private var listenedTrackId: String? = null
+    private var lastTickAt = 0L
     private var lastProgressReportMs: Long = 0L
 
     private val playerListener = object : Player.Listener {
@@ -163,6 +170,17 @@ class PlayerController(application: Application) : AndroidViewModel(application)
                 delay(500)
                 val c = controller ?: continue
                 if (c.isPlaying) {
+                    // Real listening time (not position: seeking ahead
+                    // doesn't count toward the 30-second minimum).
+                    val nowTick = android.os.SystemClock.elapsedRealtime()
+                    val playingId = currentTrack?.id
+                    if (playingId != listenedTrackId) {
+                        listenedTrackId = playingId
+                        listenedMs = 0L
+                    } else if (lastTickAt > 0L) {
+                        listenedMs += (nowTick - lastTickAt).coerceIn(0L, 2_000L)
+                    }
+                    lastTickAt = nowTick
                     positionMs = c.currentPosition
                     // A transcoded stream reports no length (TIME_UNSET):
                     // keep Jellyfin's runtime so the seek bar still works.
@@ -171,6 +189,8 @@ class PlayerController(application: Application) : AndroidViewModel(application)
                         else ticksToMs(currentTrack?.runTimeTicks ?: 0L)
                     maybeLogPlay()
                     maybeReportProgress()
+                } else {
+                    lastTickAt = 0L
                 }
             }
         }
@@ -178,6 +198,12 @@ class PlayerController(application: Application) : AndroidViewModel(application)
 
     fun attachClient(newClient: JellyfinClient) {
         client = newClient
+        // Friends' apps ask for our stats over session messages.
+        newClient.statsResponder = {
+            if (StatsSharing.isEnabled(getApplication<Application>())) {
+                com.oniel.music.data.ListeningStats.toJson(buildListeningSummary())
+            } else null
+        }
         pushSettingsToService()
     }
 
@@ -240,6 +266,19 @@ class PlayerController(application: Application) : AndroidViewModel(application)
 
     /** Every logged play, oldest first (used for the day streak). */
     fun playLogEntries(): List<PlayLog.Entry> = playLog.getEntries()
+
+    /** Your stats from the play log, with library ids for photos and covers. */
+    suspend fun buildListeningSummary(): com.oniel.music.data.ListeningSummary {
+        val c = client
+        val tracks = LibraryCache.best()?.tracks?.takeIf { it.isNotEmpty() }
+            ?: try { c?.getTrackIndex() } catch (e: Exception) { null }
+            ?: emptyList()
+        return com.oniel.music.data.ListeningStats.build(
+            userName = c?.userName.orEmpty(),
+            entries = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { playLog.getEntries() },
+            tracksById = tracks.associateBy { it.id }
+        )
+    }
 
     /** Stop playback and clear the queue (used on logout). */
     fun stopPlayback() {
@@ -309,6 +348,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         queue = tracks
         currentIndex = startIndex.coerceIn(tracks.indices)
         loggedTrackId = null
+        listenedTrackId = null
         c.setMediaItems(items, currentIndex, 0L)
         c.prepare()
         c.play()
@@ -323,6 +363,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         if (index !in queue.indices) return
         currentIndex = index
         loggedTrackId = null
+        listenedTrackId = null
         c.seekTo(index, 0L)
         c.play()
         onTrackChanged()
@@ -409,17 +450,25 @@ class PlayerController(application: Application) : AndroidViewModel(application)
 
     private fun onTrackEnded() {
         val track = currentTrack ?: return
-        logPlayIfNeeded(track)
+        if (loggedTrackId != track.id && listenedEnough(track)) logPlayIfNeeded(track)
         reportStopped(playedToCompletion = true)
+    }
+
+    /**
+     * A play counts (stats, history, Jellyfin play count) once you've
+     * actually listened 30 seconds — or nearly all of a shorter song.
+     */
+    private fun listenedEnough(track: Track): Boolean {
+        if (listenedTrackId != track.id) return false
+        val total = ticksToMs(track.runTimeTicks)
+        val needed = if (total in 1 until MIN_PLAY_MS) total * 9 / 10 else MIN_PLAY_MS
+        return listenedMs >= needed
     }
 
     private fun maybeLogPlay() {
         val track = currentTrack ?: return
         if (loggedTrackId == track.id) return
-        val total = ticksToMs(track.runTimeTicks)
-        if (total > 0 && positionMs >= total * 60 / 100) {
-            logPlayIfNeeded(track)
-        }
+        if (listenedEnough(track)) logPlayIfNeeded(track)
     }
 
     /** Logs a play once per track (never twice, even at the end). */
@@ -558,5 +607,19 @@ class PlayerController(application: Application) : AndroidViewModel(application)
 
     private companion object {
         const val HISTORY_UPLOAD_DELAY_MS = 120_000L
+    }
+}
+
+/** "Share my stats with friends" (Settings). On by default. */
+object StatsSharing {
+    private const val PREFS = "oniel_sharing"
+    private const val KEY = "share_stats"
+
+    fun isEnabled(context: android.content.Context): Boolean =
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getBoolean(KEY, true)
+
+    fun setEnabled(context: android.content.Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean(KEY, enabled).apply()
     }
 }

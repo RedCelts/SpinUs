@@ -721,3 +721,23 @@ the v1.2 script.)
 - Player seek bar: the Slider only draws; a layer on top seeks with
   `detectHorizontalDragGestures` only. Taps and up/down swipes that start
   on the bar no longer move the song (they scroll / close the player).
+
+## v1.4.0 — 30-second plays, new stats, friends' stats (2026-11-24)
+- A play counts (play log, history sync, Jellyfin play count) only after
+  30 s of real listening time (accumulated from playback ticks, so
+  seeking ahead doesn't count), or ~all of a song shorter than 30 s.
+  Previously: 60% of the song's position.
+- Stats rebuilt from the play log only (`ListeningStats.build`): This week /
+  30 days / All time chips; gradient hero card (minutes, plays, artists,
+  day streak); #1 artist card (blurred photo + big round photo); top
+  artists row with round photos and rank badges; top songs with covers;
+  minutes-per-week bar chart (8 weeks). Artist/album ids come from the
+  cached library (else `getTrackIndex`).
+- Friends' stats: Friends list rows running Oniel Music get a "Stats"
+  button. The app sends a session message (header
+  `onielmusic:stats-request`, {id, its own session id}); the friend's app
+  answers over the WebSocket (`onielmusic:stats-reply`, summary JSON)
+  if "Share my listening stats" is on (Settings, default on). 8 s timeout
+  → "app needs to be open". Requests go only to Oniel Music sessions.
+  The presence socket now handles messages, answers ForceKeepAlive with
+  KeepAlive, reconnects after failure, and advertises DisplayMessage.
