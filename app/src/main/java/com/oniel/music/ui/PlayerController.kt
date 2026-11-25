@@ -167,6 +167,18 @@ class PlayerController(application: Application) : AndroidViewModel(application)
                 onTrackEnded()
             }
         }
+
+        // Playback started elsewhere (Android Auto): take over its queue so
+        // the app shows the right song.
+        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+            val c = controller ?: return
+            val ids = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).mediaId }
+            if (ids.isEmpty() || ids == queue.map { it.id }) return
+            val tracks = (0 until c.mediaItemCount).mapNotNull { c.getMediaItemAt(it).toTrackOrNull() }
+            if (tracks.size != ids.size) return
+            queue = tracks
+            currentIndex = c.currentMediaItemIndex
+        }
     }
 
     init {
@@ -589,35 +601,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         }
     }
 
-    private fun Track.toMediaItem(): MediaItem {
-        val cl = client
-        val url = cl?.audioUrl(id) ?: ""
-        // Jellyfin's runtime rides along so PlaybackService can time the
-        // crossfade even when a transcoded stream reports no length.
-        val extras = Bundle().apply {
-            putLong(PlaybackService.EXTRA_RUNTIME_MS, ticksToMs(runTimeTicks))
-            putString(PlaybackService.EXTRA_ALBUM_ID, albumId ?: "")
-        }
-        val metadata = MediaMetadata.Builder()
-            .setTitle(title)
-            .setArtist(artists.joinToString(", ").ifEmpty { albumArtist })
-            .setAlbumTitle(album)
-            .setAlbumArtist(albumArtist)
-            .setExtras(extras)
-        if (cl != null) {
-            // Album art on the lock screen and notification.
-            try {
-                metadata.setArtworkUri(Uri.parse(cl.trackArtUrl(this, 600)))
-            } catch (e: Exception) {
-                // No artwork: the notification shows the app icon.
-            }
-        }
-        return MediaItem.Builder()
-            .setUri(Uri.parse(url))
-            .setMediaId(id)
-            .setMediaMetadata(metadata.build())
-            .build()
-    }
+    private fun Track.toMediaItem(): MediaItem = toPlayableItem(client)
 
     override fun onCleared() {
         controller?.removeListener(playerListener)

@@ -788,3 +788,31 @@ families by time of day. Tracks now carry `genres` + `year`
 - Sticky controls: when the big controls (item 3) scroll away, a compact
   card slides down at the top — cover, title, heart, prev/play/next,
   progress line; tap it to scroll back up.
+
+## v1.6.0 — Android Auto (2026-11-25)
+- `PlaybackService` is now a `MediaLibraryService` (exported; intent
+  actions MediaLibraryService + android.media.browse.MediaBrowserService)
+  and the manifest declares `com.google.android.gms.car.application`
+  (`xml/automotive_app_desc.xml`, uses media). The app's own controller
+  works as before (items with a stream URL pass straight through).
+- `AutoLibrary` = the browse tree. Tabs: Home (grouped grid: Made for you
+  mixes, Stations, Recently played, Recently added), Library (Artists with
+  photos → albums + songs; Albums grid; Singles), Playlists, Liked.
+  Songs in lists have ids `<listId>::<trackId>`; tapping one queues the
+  whole list from it. Mixes/stations are playable cards (rule 7/8 logic,
+  from the app's cache or computed from the play log). Data from
+  LibraryCache / HomeCache, else the phone copy, else the server; the
+  client is restored from the saved login.
+- Search (keyboard) and "Hey Google, play … on Oniel Music"
+  (`playFromSearch`: an exact artist → their top songs, else songs).
+- Custom layout buttons: heart (like/unlike current song), shuffle,
+  repeat (off → all → one); also shown in the notification.
+- `ArtworkProvider` (content://com.oniel.music.artwork) — Auto only takes
+  content:// art; images are downloaded once into cache/auto_art.
+- `MediaItems.kt`: shared `Track.toPlayableItem` + `TrackRegistry`;
+  `PlayerController` adopts a queue started from Auto (onTimelineChanged),
+  so the app shows the right song.
+- onConnect now grants the app's custom commands explicitly (auth header,
+  crossfade) plus the Auto ones.
+- Sideloaded apps are hidden in Android Auto until "Unknown sources" is
+  enabled in Android Auto's developer settings.

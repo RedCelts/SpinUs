@@ -28,15 +28,28 @@
         <!-- Foreground playback service (Media3). Declared here by hand:
              the manual build does not merge library manifests, so the
              service would otherwise be missing from the APK. -->
+        <!-- Exported (v1.6.0) so Android Auto can browse and control it. -->
         <service
             android:name=".ui.PlaybackService"
             android:enabled="true"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="androidx.media3.session.MediaLibraryService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+
+        <!-- Cover art / artist photos for Android Auto (content:// only). -->
+        <provider
+            android:name=".ui.ArtworkProvider"
+            android:authorities="com.oniel.music.artwork"
+            android:exported="true" />
+
+        <!-- Android Auto: this is a media app. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
 
     </application>
 

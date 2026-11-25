@@ -20,7 +20,21 @@ import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
-import androidx.media3.session.MediaSessionService
+import androidx.media3.common.MediaMetadata
+import androidx.media3.session.CommandButton
+import androidx.media3.session.LibraryResult
+import androidx.media3.session.MediaConstants
+import androidx.media3.session.MediaLibraryService
+import androidx.media3.session.MediaLibraryService.LibraryParams
+import androidx.media3.session.MediaLibraryService.MediaLibrarySession
+import com.google.common.collect.ImmutableList
+import com.google.common.util.concurrent.SettableFuture
+import com.oniel.music.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
@@ -75,7 +89,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *    consecutive tracks from the same album are never crossfaded.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
-class PlaybackService : MediaSessionService() {
+class PlaybackService : MediaLibraryService() {
 
     companion object {
         /** args: [EXTRA_AUTH_HEADER] = full `Authorization` header value. */
@@ -91,6 +105,11 @@ class PlaybackService : MediaSessionService() {
         /** MediaMetadata extras key: the track's album id (same album = no crossfade). */
         const val EXTRA_ALBUM_ID = "album_id"
 
+        /** Android Auto buttons (custom layout). */
+        const val ACTION_LIKE = "com.oniel.music.LIKE"
+        const val ACTION_SHUFFLE = "com.oniel.music.SHUFFLE"
+        const val ACTION_REPEAT = "com.oniel.music.REPEAT"
+
         private const val CHECK_INTERVAL_MS = 200L
         private const val RAMP_TICK_MS = 50L
     }
@@ -99,7 +118,74 @@ class PlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     /** The other player: idle, or fading in the next track. */
     private var spare: ExoPlayer? = null
-    private var mediaSession: MediaSession? = null
+    private var mediaSession: MediaLibrarySession? = null
+
+    // ---- Android Auto (v1.6.0) ----
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val autoLibrary by lazy { AutoLibrary(this) }
+    /** Last search results per query (Auto asks for them after onSearch). */
+    private val searchResults = HashMap<String, List<MediaItem>>()
+    /** Is the current song liked (for the heart button)? */
+    private var currentLiked = false
+
+    private fun <T> future(block: suspend () -> T): ListenableFuture<T> {
+        val f = SettableFuture.create<T>()
+        serviceScope.launch {
+            try { f.set(block()) } catch (e: Throwable) { f.setException(e) }
+        }
+        return f
+    }
+
+    /** Heart / shuffle / repeat buttons for Android Auto and the notification. */
+    private fun updateCustomLayout() {
+        val session = mediaSession ?: return
+        val p = player ?: return
+        val like = CommandButton.Builder()
+            .setDisplayName(if (currentLiked) "Remove from Liked" else "Add to Liked")
+            .setIconResId(if (currentLiked) R.drawable.ic_auto_heart_filled else R.drawable.ic_auto_heart)
+            .setSessionCommand(SessionCommand(ACTION_LIKE, Bundle.EMPTY))
+            .build()
+        val shuffle = CommandButton.Builder()
+            .setDisplayName("Shuffle")
+            .setIconResId(if (p.shuffleModeEnabled) R.drawable.ic_auto_shuffle_on else R.drawable.ic_auto_shuffle)
+            .setSessionCommand(SessionCommand(ACTION_SHUFFLE, Bundle.EMPTY))
+            .build()
+        val repeat = CommandButton.Builder()
+            .setDisplayName("Repeat")
+            .setIconResId(
+                when (p.repeatMode) {
+                    Player.REPEAT_MODE_ONE -> R.drawable.ic_auto_repeat_one
+                    Player.REPEAT_MODE_ALL -> R.drawable.ic_auto_repeat_on
+                    else -> R.drawable.ic_auto_repeat
+                }
+            )
+            .setSessionCommand(SessionCommand(ACTION_REPEAT, Bundle.EMPTY))
+            .build()
+        session.setCustomLayout(ImmutableList.of(like, shuffle, repeat))
+    }
+
+    /** Looks up whether the new song is liked, then refreshes the buttons. */
+    private fun refreshLikeState() {
+        val id = player?.currentMediaItem?.mediaId
+        if (id.isNullOrBlank()) {
+            currentLiked = false
+            updateCustomLayout()
+            return
+        }
+        serviceScope.launch {
+            currentLiked = try {
+                autoLibrary.client()?.isFavorite(id, TrackRegistry.get(id)?.isFavorite?.takeIf { it }) ?: false
+            } catch (e: Exception) { false }
+            updateCustomLayout()
+        }
+    }
+
+    /** On both players: keep the Auto buttons in step. */
+    private val layoutListener = object : Player.Listener {
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = refreshLikeState()
+        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = updateCustomLayout()
+        override fun onRepeatModeChanged(repeatMode: Int) = updateCustomLayout()
+    }
     /** Each player's level meter (smart crossfade). */
     private val meters = HashMap<ExoPlayer, LevelMeter>()
 
@@ -118,7 +204,147 @@ class PlaybackService : MediaSessionService() {
     private var fadeStartMs = 0L
     private var fadeTotalMs = 0L
 
-    private val sessionCallback = object : MediaSession.Callback {
+    private val sessionCallback = object : MediaLibrarySession.Callback {
+        override fun onConnect(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo
+        ): MediaSession.ConnectionResult {
+            val base = super.onConnect(session, controller)
+            val commands = base.availableSessionCommands.buildUpon()
+                .add(SessionCommand(ACTION_SET_AUTH_HEADER, Bundle.EMPTY))
+                .add(SessionCommand(ACTION_SET_CROSSFADE_SECONDS, Bundle.EMPTY))
+                .add(SessionCommand(ACTION_LIKE, Bundle.EMPTY))
+                .add(SessionCommand(ACTION_SHUFFLE, Bundle.EMPTY))
+                .add(SessionCommand(ACTION_REPEAT, Bundle.EMPTY))
+                .build()
+            return MediaSession.ConnectionResult.accept(commands, base.availablePlayerCommands)
+        }
+
+        override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
+            updateCustomLayout()
+        }
+
+        // ---- Browsing (Android Auto) ----
+
+        override fun onGetLibraryRoot(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<MediaItem>> {
+            val extras = Bundle().apply {
+                putBoolean("android.media.browse.CONTENT_STYLE_SUPPORTED", true)
+                putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_BROWSABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM)
+                putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM)
+                putBoolean("android.media.browse.SEARCH_SUPPORTED", true)
+            }
+            val rootParams = LibraryParams.Builder().setExtras(extras).build()
+            return Futures.immediateFuture(LibraryResult.ofItem(autoLibrary.root(), rootParams))
+        }
+
+        override fun onGetChildren(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            parentId: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = future {
+            val all = try { autoLibrary.children(parentId) } catch (e: Exception) { emptyList() }
+            LibraryResult.ofItemList(ImmutableList.copyOf(pageOf(all, page, pageSize)), params)
+        }
+
+        override fun onGetItem(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            mediaId: String
+        ): ListenableFuture<LibraryResult<MediaItem>> = Futures.immediateFuture(
+            LibraryResult.ofItem(
+                MediaItem.Builder().setMediaId(mediaId)
+                    .setMediaMetadata(MediaMetadata.Builder().setIsPlayable(true).setIsBrowsable(false).build())
+                    .build(),
+                null
+            )
+        )
+
+        override fun onSearch(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<Void>> = future {
+            val results = try { autoLibrary.search(query) } catch (e: Exception) { emptyList() }
+            searchResults[query] = results
+            session.notifySearchResultChanged(browser, query, results.size, params)
+            LibraryResult.ofVoid()
+        }
+
+        override fun onGetSearchResult(
+            session: MediaLibrarySession,
+            browser: MediaSession.ControllerInfo,
+            query: String,
+            page: Int,
+            pageSize: Int,
+            params: LibraryParams?
+        ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = future {
+            val all = searchResults[query] ?: try { autoLibrary.search(query) } catch (e: Exception) { emptyList() }
+            LibraryResult.ofItemList(ImmutableList.copyOf(pageOf(all, page, pageSize)), params)
+        }
+
+        // ---- Playing something picked in Auto (or by voice) ----
+
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>
+        ): ListenableFuture<MutableList<MediaItem>> {
+            // The app sends ready-to-play items (with a stream URL).
+            if (mediaItems.all { it.localConfiguration != null }) return Futures.immediateFuture(mediaItems)
+            return future {
+                val out = mutableListOf<MediaItem>()
+                for (item in mediaItems) {
+                    if (item.localConfiguration != null) {
+                        out += item
+                    } else {
+                        val query = item.requestMetadata.searchQuery
+                        out += if (item.mediaId.isBlank() && !query.isNullOrBlank()) {
+                            autoLibrary.playFromSearch(query)
+                        } else {
+                            val (items, start) = autoLibrary.resolve(item.mediaId)
+                            items.drop(start)
+                        }
+                    }
+                }
+                out
+            }
+        }
+
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            if (mediaItems.all { it.localConfiguration != null }) {
+                return Futures.immediateFuture(
+                    MediaSession.MediaItemsWithStartPosition(mediaItems, startIndex, startPositionMs)
+                )
+            }
+            return future {
+                val first = mediaItems.firstOrNull()
+                val query = first?.requestMetadata?.searchQuery
+                if (first == null) {
+                    MediaSession.MediaItemsWithStartPosition(emptyList(), 0, 0L)
+                } else if (first.mediaId.isBlank() && !query.isNullOrBlank()) {
+                    MediaSession.MediaItemsWithStartPosition(autoLibrary.playFromSearch(query), 0, 0L)
+                } else {
+                    // A tapped song: queue its whole list from that song.
+                    val (items, start) = autoLibrary.resolve(first.mediaId)
+                    MediaSession.MediaItemsWithStartPosition(items, start, C.TIME_UNSET)
+                }
+            }
+        }
+
         override fun onCustomCommand(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
@@ -139,6 +365,30 @@ class PlaybackService : MediaSessionService() {
                         args.getInt(EXTRA_CROSSFADE_SECONDS, Crossfade.DEFAULT_SECONDS)
                     )
                     if (crossfadeSeconds == 0) cancelCrossfade()
+                }
+                ACTION_LIKE -> {
+                    val id = player?.currentMediaItem?.mediaId
+                    if (!id.isNullOrBlank()) {
+                        val want = !currentLiked
+                        currentLiked = want
+                        updateCustomLayout()
+                        serviceScope.launch {
+                            try {
+                                autoLibrary.client()?.setFavorite(id, want)
+                            } catch (e: Exception) {
+                                currentLiked = !want
+                                updateCustomLayout()
+                            }
+                        }
+                    }
+                }
+                ACTION_SHUFFLE -> player?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+                ACTION_REPEAT -> player?.let {
+                    it.repeatMode = when (it.repeatMode) {
+                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                        Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                        else -> Player.REPEAT_MODE_OFF
+                    }
                 }
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
@@ -253,9 +503,18 @@ class PlaybackService : MediaSessionService() {
         val second = buildPlayer()
         second.addListener(spareListener)
         spare = second
-        mediaSession = MediaSession.Builder(this, first)
-            .setCallback(sessionCallback)
+        first.addListener(layoutListener)
+        second.addListener(layoutListener)
+        mediaSession = MediaLibrarySession.Builder(this, first, sessionCallback)
+            .setSessionActivity(
+                android.app.PendingIntent.getActivity(
+                    this, 0,
+                    android.content.Intent(this, com.oniel.music.MainActivity::class.java),
+                    android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            )
             .build()
+        updateCustomLayout()
         handler.post(checkRunnable)
     }
 
@@ -291,9 +550,10 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(
         controllerInfo: MediaSession.ControllerInfo
-    ): MediaSession? = mediaSession
+    ): MediaLibrarySession? = mediaSession
 
     override fun onDestroy() {
+        serviceScope.cancel()
         handler.removeCallbacks(checkRunnable)
         handler.removeCallbacks(rampRunnable)
         mediaSession?.release()
@@ -418,4 +678,12 @@ class PlaybackService : MediaSessionService() {
         fadeOut = null
         fadeIn = null
     }
+}
+
+/** One page of a browse list (Android Auto pages long lists). */
+private fun <T> pageOf(all: List<T>, page: Int, pageSize: Int): List<T> {
+    if (pageSize <= 0 || pageSize == Int.MAX_VALUE) return all
+    val from = (page.toLong() * pageSize).coerceAtMost(all.size.toLong()).toInt()
+    val to = (from + pageSize).coerceAtMost(all.size)
+    return all.subList(from, to)
 }
