@@ -702,3 +702,16 @@ the v1.2 script.)
   `songsByArtists`), each section shows as soon as it arrives; no user
   data in search reads; dropped the duplicate hints call; 300 ms debounce;
   last 20 searches cached 2 min.
+
+## v1.3.6 — Library: instant, artist photos, swipe tabs (2026-11-24)
+- Library read albums, every song and playlists one after another on every
+  visit (~5 s spinner). Now `LibraryCache.best()` starts from whatever is in
+  memory (Home's load or the last Library visit; else the copy saved on the
+  phone), refreshing in the background only when older than 5 min, albums
+  and songs in parallel. Playlists load alongside.
+- Artists tab shows each artist's photo (round), from `getArtistPictures`
+  (`/Artists`, Primary tags; cached in memory 1 h and on the phone in
+  `artist_pics.json`); initials when an artist has none.
+- Tabs are a `HorizontalPager`: swipe left/right between Artists, Albums,
+  Songs, Playlists, Liked; tapping a tab animates to it.
+- Liked respects favorites changed in this session (`favoriteOverride`).

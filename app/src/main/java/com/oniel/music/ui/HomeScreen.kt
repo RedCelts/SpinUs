@@ -596,6 +596,9 @@ object HomeCache {
 
     fun isStale() = System.currentTimeMillis() - loadedAt > MAX_AGE_MS
 
+    /** When the shown data was loaded from the server (0 = from the phone). */
+    fun loadedAtMs() = loadedAt
+
     fun store(d: Data) {
         data = d
         loadedAt = System.currentTimeMillis()
@@ -610,6 +613,7 @@ object HomeCache {
     /** Forget everything (log out / server change), including the saved copy. */
     fun clear(context: android.content.Context? = null) {
         context?.let { HomeDiskCache.delete(it) }
+        LibraryCache.clear()
         data = null
         loadedAt = 0L
         picks = emptyList()

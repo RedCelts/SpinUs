@@ -46,7 +46,7 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.3.5"
+        const val CLIENT_VERSION = "1.3.6"
         /** Track ids per playlist request (keeps the URL short). */
         private const val PLAYLIST_CHUNK = 100
         /**
@@ -411,6 +411,32 @@ class JellyfinClient(
             "IncludeItemTypes=Audio&Recursive=true" +
                 "&Fields=Album,AlbumArtist,Artists,AlbumId,RunTimeTicks&EnableUserData=false"
         ).optJSONArray("Items")?.toTrackList().orEmpty()
+
+    /**
+     * Every artist that has a photo, keyed by lower-case name (for the
+     * Library's artist list). Names without a photo are left out.
+     */
+    suspend fun getArtistPictures(): Map<String, ArtistHit> {
+        val uid = requireUserId()
+        val json = getJson(
+            "/Artists?userId=$uid&Recursive=true&EnableUserData=false" +
+                "&EnableImageTypes=Primary&ImageTypeLimit=1",
+            "artist pictures"
+        )
+        val items = json.optJSONArray("Items") ?: return emptyMap()
+        val map = HashMap<String, ArtistHit>()
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val tag = item.optJSONObject("ImageTags")?.optStringOrNull("Primary") ?: continue
+            val name = item.optString("Name", "")
+            if (name.isBlank()) continue
+            map.putIfAbsent(name.lowercase(), ArtistHit(item.getString("Id"), name, tag))
+        }
+        return map
+    }
+
+    /** Favorite flag changed in this session, if any (lists may be older). */
+    fun favoriteOverride(itemId: String): Boolean? = favoriteOverrides[itemId]
 
     /** A playlist's songs, in playlist order. */
     suspend fun getPlaylistTracks(playlistId: String): List<Track> {

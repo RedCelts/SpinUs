@@ -2,6 +2,7 @@ package com.oniel.music.ui
 
 import android.content.Context
 import com.oniel.music.data.Album
+import com.oniel.music.data.ArtistHit
 import com.oniel.music.data.Track
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -82,6 +83,36 @@ object HomeDiskCache {
 
     fun delete(context: Context) {
         try { file(context).delete() } catch (e: Exception) { }
+        try { File(context.filesDir, PICS_FILE).delete() } catch (e: Exception) { }
+    }
+
+    // ---- Artist photos for the Library list (name → id + image tag) ----
+
+    private const val PICS_FILE = "artist_pics.json"
+
+    suspend fun loadArtistPictures(context: Context): Map<String, ArtistHit> = withContext(Dispatchers.IO) {
+        try {
+            val f = File(context.filesDir, PICS_FILE)
+            if (!f.exists()) return@withContext emptyMap()
+            val o = JSONObject(f.readText())
+            o.keys().asSequence().associateWith { key ->
+                val a = o.getJSONArray(key)
+                ArtistHit(a.getString(0), a.getString(1), a.getString(2))
+            }
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
+
+    suspend fun saveArtistPictures(context: Context, pics: Map<String, ArtistHit>) = withContext(Dispatchers.IO) {
+        try {
+            val o = JSONObject()
+            pics.forEach { (key, hit) -> o.put(key, JSONArray(listOf(hit.id, hit.name, hit.imageTag))) }
+            val tmp = File(context.filesDir, "$PICS_FILE.tmp")
+            tmp.writeText(o.toString())
+            tmp.renameTo(File(context.filesDir, PICS_FILE))
+        } catch (e: Exception) {
+        }
     }
 
     // ---- JSON <-> models ----

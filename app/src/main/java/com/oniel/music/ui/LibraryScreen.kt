@@ -1,6 +1,14 @@
 package com.oniel.music.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import com.oniel.music.data.ArtistHit
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -48,6 +56,7 @@ import com.oniel.music.data.Track
 /**
  * Library: Artists, Albums, Songs, Playlists and Liked songs.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
     client: JellyfinClient,
@@ -64,22 +73,67 @@ fun LibraryScreen(
         stringResource(R.string.library_playlists),
         stringResource(R.string.library_liked)
     )
-    var selectedTab by remember { mutableStateOf(initialTab.coerceIn(tabs.indices)) }
-    var loading by remember { mutableStateOf(true) }
-    var albums by remember { mutableStateOf<List<Album>>(emptyList()) }
-    var tracks by remember { mutableStateOf<List<Track>>(emptyList()) }
-    var playlists by remember { mutableStateOf<List<Playlist>>(emptyList()) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(
+        initialPage = initialTab.coerceIn(tabs.indices),
+        pageCount = { tabs.size }
+    )
+    // Start from whatever is already in memory (Home's load or the last
+    // Library visit): no spinner when there's anything to show.
+    val start = LibraryCache.best()
+    var loading by remember { mutableStateOf(start == null) }
+    var albums by remember { mutableStateOf(start?.albums.orEmpty()) }
+    var tracks by remember { mutableStateOf(start?.tracks.orEmpty()) }
+    var playlists by remember { mutableStateOf(LibraryCache.playlists) }
+    var artistPics by remember { mutableStateOf(LibraryCache.artistPictures) }
 
     LaunchedEffect(Unit) {
-        try {
-            albums = client.getAlbums()
-            tracks = client.getTracks()
-            playlists = client.getPlaylists()
-        } catch (e: Exception) {
-            // Sections stay empty; the tabs still render.
-        } finally {
+        coroutineScope {
+            launch {
+                playlists = try { client.getPlaylists() } catch (e: Exception) { playlists }
+                LibraryCache.playlists = playlists
+            }
+            launch {
+                if (artistPics.isEmpty()) {
+                    artistPics = HomeDiskCache.loadArtistPictures(context)
+                }
+                if (!LibraryCache.picturesFresh()) {
+                    try {
+                        val fresh = client.getArtistPictures()
+                        artistPics = fresh
+                        LibraryCache.storePictures(fresh)
+                        HomeDiskCache.saveArtistPictures(context, fresh)
+                    } catch (e: Exception) { }
+                }
+            }
+            // Nothing in memory: the copy saved on the phone, if any.
+            if (LibraryCache.best() == null) {
+                HomeDiskCache.load(context)?.let { d ->
+                    if (HomeCache.data == null) HomeCache.restore(d)
+                    albums = d.libraryAlbums
+                    tracks = d.allTracks
+                    loading = false
+                }
+            }
+            // Refresh from the server only when what we have is old.
+            if (LibraryCache.needsRefresh()) {
+                try {
+                    val a = async { client.getAlbums() }
+                    val t = async { client.getTracks() }
+                    albums = a.await()
+                    tracks = t.await()
+                    LibraryCache.store(albums, tracks)
+                } catch (e: Exception) {
+                    // Keep what's shown; tabs still render.
+                }
+            }
             loading = false
         }
+    }
+
+    val liked = remember(tracks) {
+        tracks.filter { client.favoriteOverride(it.id) ?: it.isFavorite }
     }
 
     Column(
@@ -93,11 +147,11 @@ fun LibraryScreen(
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
         )
-        TabRow(selectedTabIndex = selectedTab) {
+        TabRow(selectedTabIndex = pagerState.currentPage) {
             tabs.forEachIndexed { index, title ->
                 Tab(
-                    selected = selectedTab == index,
-                    onClick = { selectedTab = index },
+                    selected = pagerState.currentPage == index,
+                    onClick = { scope.launch { pagerState.animateScrollToPage(index) } },
                     text = { Text(title, maxLines = 1) }
                 )
             }
@@ -109,39 +163,107 @@ fun LibraryScreen(
             ) { CircularProgressIndicator() }
             return@Column
         }
-        when (selectedTab) {
-            0 -> ArtistsSection(
-                tracks = tracks,
-                // Opens the artist page (Play / Shuffle live there now).
-                onArtistClick = onArtistClick
-            )
-            1 -> AlbumsSection(albums = albums, client = client, onAlbumClick = onAlbumClick)
-            2 -> SongsSection(tracks = tracks, player = player, onTrackPlayed = onTrackPlayed)
-            3 -> PlaylistsSection(playlists = playlists)
-            4 -> LikedSection(
-                tracks = tracks.filter { it.isFavorite },
-                player = player,
-                onTrackPlayed = onTrackPlayed
-            )
+        // Swipe left / right between the tabs.
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize()
+        ) { page ->
+            when (page) {
+                0 -> ArtistsSection(
+                    tracks = tracks,
+                    pictures = artistPics,
+                    client = client,
+                    // Opens the artist page (Play / Shuffle live there now).
+                    onArtistClick = onArtistClick
+                )
+                1 -> AlbumsSection(albums = albums, client = client, onAlbumClick = onAlbumClick)
+                2 -> SongsSection(tracks = tracks, player = player, onTrackPlayed = onTrackPlayed)
+                3 -> PlaylistsSection(playlists = playlists)
+                else -> LikedSection(
+                    tracks = liked,
+                    player = player,
+                    onTrackPlayed = onTrackPlayed
+                )
+            }
         }
+    }
+}
+
+/**
+ * Library data kept while the app runs. Home's load counts too (same
+ * songs and albums), whichever is newer wins; older than 5 min → a quiet
+ * background refresh on the next visit. Artist photos refresh hourly.
+ */
+object LibraryCache {
+    private const val MAX_AGE_MS = 5 * 60_000L
+    private const val PICS_MAX_AGE_MS = 60 * 60_000L
+
+    data class Snapshot(val albums: List<Album>, val tracks: List<Track>)
+
+    @Volatile private var own: Snapshot? = null
+    @Volatile private var ownAt = 0L
+    @Volatile var playlists: List<Playlist> = emptyList()
+    @Volatile var artistPictures: Map<String, ArtistHit> = emptyMap()
+        private set
+    @Volatile private var picturesAt = 0L
+
+    /** The newest library data in memory, or null. */
+    fun best(): Snapshot? {
+        val home = HomeCache.data?.let { Snapshot(it.libraryAlbums, it.allTracks) }
+        return when {
+            own != null && (home == null || ownAt >= HomeCache.loadedAtMs()) -> own
+            home != null && home.tracks.isNotEmpty() -> home
+            else -> own
+        }
+    }
+
+    fun needsRefresh(): Boolean {
+        val newest = maxOf(ownAt, HomeCache.loadedAtMs())
+        return best() == null || System.currentTimeMillis() - newest > MAX_AGE_MS
+    }
+
+    fun store(albums: List<Album>, tracks: List<Track>) {
+        own = Snapshot(albums, tracks)
+        ownAt = System.currentTimeMillis()
+    }
+
+    fun picturesFresh() =
+        artistPictures.isNotEmpty() && System.currentTimeMillis() - picturesAt < PICS_MAX_AGE_MS
+
+    fun storePictures(pics: Map<String, ArtistHit>) {
+        artistPictures = pics
+        picturesAt = System.currentTimeMillis()
+    }
+
+    fun clear() {
+        own = null
+        ownAt = 0L
+        playlists = emptyList()
+        artistPictures = emptyMap()
+        picturesAt = 0L
     }
 }
 
 @Composable
 private fun ArtistsSection(
     tracks: List<Track>,
+    pictures: Map<String, ArtistHit>,
+    client: JellyfinClient,
     onArtistClick: (String) -> Unit
 ) {
-    val artists = tracks
-        .flatMap { it.artists.ifEmpty { listOf(it.albumArtist) } }
-        .filter { it.isNotBlank() }
-        .groupingBy { it }
-        .eachCount()
-        .entries
-        .sortedByDescending { it.value }
-        .map { it.key }
+    val artists = remember(tracks) {
+        tracks
+            .flatMap { it.artists.ifEmpty { listOf(it.albumArtist) } }
+            .filter { it.isNotBlank() }
+            .groupingBy { it }
+            .eachCount()
+            .entries
+            .sortedByDescending { it.value }
+            .map { it.key }
+    }
     LazyColumn(contentPadding = PaddingValues(bottom = bottomChromePadding())) {
-        items(artists) { artist ->
+        items(artists, key = { it }) { artist ->
+            val pic = pictures[artist.lowercase()]
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -149,7 +271,17 @@ private fun ArtistsSection(
                     .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                ListenerAvatar(userName = artist, sizeDp = 48.dp)
+                // The artist's photo (round); initials when there's none.
+                if (pic != null) {
+                    CoverImage(
+                        url = try { client.imageUrl(pic.id, pic.imageTag, 160) } catch (e: Exception) { null },
+                        modifier = Modifier.size(48.dp),
+                        cornerDp = 24.dp,
+                        contentDescription = artist
+                    )
+                } else {
+                    ListenerAvatar(userName = artist, sizeDp = 48.dp)
+                }
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = artist,
@@ -158,7 +290,7 @@ private fun ArtistsSection(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
                 )
-                ItemMoreButton(target = ActionTarget.ArtistItem(null, artist))
+                ItemMoreButton(target = ActionTarget.ArtistItem(pic?.id, artist))
             }
         }
     }
