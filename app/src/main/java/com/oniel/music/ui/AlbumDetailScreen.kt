@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -89,14 +90,22 @@ fun AlbumDetailScreen(
         try { client.imageUrl(albumId, current?.primaryImageTag, 600) } catch (e: Exception) { null }
     }
 
+    val listState = rememberLazyListState()
+    Box(modifier = Modifier.fillMaxSize()) {
+    // Pinned header picture; the list scrolls over it.
+    FixedBackdrop(
+        backdropUrl = client.backdropFor(current),
+        fallbackUrl = coverUrl,
+        listState = listState,
+        height = 300.dp
+    )
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomChromePadding())
     ) {
         item {
             BackdropHeader(
-                backdropUrl = client.backdropFor(current),
-                fallbackUrl = coverUrl,
                 height = 300.dp
             ) {
                 IconButton(
@@ -225,6 +234,7 @@ fun AlbumDetailScreen(
                 }
             }
         }
+    }
     }
 }
 

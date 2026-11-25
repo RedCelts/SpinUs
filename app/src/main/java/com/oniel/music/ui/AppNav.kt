@@ -20,6 +20,8 @@ import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.add
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -192,7 +194,15 @@ fun OnielMusicApp() {
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = pageBackground,
             bottomBar = {
-                Column(modifier = Modifier.hazeChild(state = hazeState, style = glass)) {
+                Box {
+                // Frosted from halfway down, fading to fully see-through at the top.
+                FadingGlass(
+                    state = hazeState,
+                    tint = pageBackground,
+                    fadeTowardTop = true,
+                    modifier = Modifier.matchParentSize()
+                )
+                Column {
                     if (showMiniPlayer) {
                         MiniPlayer(
                             client = client,
@@ -255,6 +265,7 @@ fun OnielMusicApp() {
                             )
                         }
                     }
+                }
                 }
             }
         ) { innerPadding ->
@@ -423,12 +434,14 @@ fun OnielMusicApp() {
                     }
                 }
                 // Frosted strip behind the (transparent) status bar.
-                Box(
+                FadingGlass(
+                    state = hazeState,
+                    tint = pageBackground,
+                    fadeTowardTop = false,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .fillMaxWidth()
-                        .windowInsetsTopHeight(WindowInsets.statusBars)
-                        .hazeChild(state = hazeState, style = glass)
+                        .windowInsetsTopHeight(WindowInsets.statusBars.add(WindowInsets(top = 36.dp)))
                 )
             }
         }
@@ -439,6 +452,59 @@ fun OnielMusicApp() {
             client = client,
             myUserId = savedAuth.userId,
             onDismiss = { showFriends = false }
+        )
+    }
+}
+
+
+/**
+ * Frosted glass that fades out: solid (blur + tint) over half its height,
+ * then easing to completely see-through at the far edge — toward the top
+ * for the bottom bar, toward the bottom for the status-bar strip. The blur
+ * steps down in thin bands (Haze has no gradient mask in this version);
+ * the tint is one smooth gradient on top.
+ */
+@Composable
+private fun FadingGlass(
+    state: HazeState,
+    tint: Color,
+    fadeTowardTop: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val steps = 6
+    val maxBlur = 10.dp
+    Box(modifier = modifier) {
+        // (strength, share of height) from top to bottom.
+        val fading = (1..steps).map { (it / steps.toFloat()) to (0.5f / steps) } // weak → strong
+        val bands = if (fadeTowardTop) fading + (1f to 0.5f) else listOf(1f to 0.5f) + fading.reversed()
+        Column(modifier = Modifier.matchParentSize()) {
+            bands.forEach { (strength, share) ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(share)
+                        .hazeChild(
+                            state = state,
+                            style = HazeStyle(
+                                tint = Color.Transparent,
+                                blurRadius = maxBlur * strength,
+                                noiseFactor = 0f
+                            )
+                        )
+                )
+            }
+        }
+        val solid = tint.copy(alpha = 0.5f)
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    if (fadeTowardTop) {
+                        Brush.verticalGradient(0f to Color.Transparent, 0.5f to solid, 1f to solid)
+                    } else {
+                        Brush.verticalGradient(0f to solid, 0.5f to solid, 1f to Color.Transparent)
+                    }
+                )
         )
     }
 }

@@ -654,3 +654,16 @@ the v1.2 script.)
   slight blur (Android 12+), a 28% genre-colour wash, dark top for the
   back button and a fade into the page. Rebuilt every open, so it always
   matches the chart. Falls back to the plain colour header.
+
+## v1.3.2 — Fading glass bars, pinned fading backdrops (2026-11-24)
+- Bottom chrome and status strip use `FadingGlass`: solid glass (10 dp
+  blur, 50% page tint) over half the height, easing to fully see-through
+  at the far edge (bottom bar → toward the top; status strip, now status
+  bar + 36 dp → toward the bottom). Haze 0.7 has no gradient mask, so the
+  blur steps down in 6 thin `hazeChild` bands; the tint is one gradient.
+- Album, artist and genre header pictures are pinned (`FixedBackdrop` /
+  pinned genre layer): they no longer scroll, fade down to see-through
+  (`Modifier.fadeDown`, offscreen `DstIn` mask) and dim up to 65% as the
+  list scrolls over them (`headerScrollFraction`, read in graphicsLayer).
+  `BackdropHeader` is now just the see-through first list item holding
+  the cover/title/back button. The player backdrop fades down too.

@@ -30,6 +30,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -133,7 +135,32 @@ fun GenreScreen(
     val color = genreColorFor(genreName)
     val background = MaterialTheme.colorScheme.background
 
+    val headerHeight = if (topSongs.isNotEmpty()) 260.dp else 200.dp
+    val headerPx = with(LocalDensity.current) { headerHeight.toPx() }
+    val listState = rememberLazyListState()
+
+    Box(modifier = Modifier.fillMaxSize()) {
+    // Pinned backdrop (doesn't scroll): genre colour + the current top 3
+    // blended, fading down to see-through and dimming as the list scrolls.
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(headerHeight + 80.dp)
+            .graphicsLayer { alpha = 1f - 0.65f * listState.headerScrollFraction(headerPx) }
+            .fadeDown(solidUntil = 0.4f)
+            .background(Brush.verticalGradient(listOf(color, color.copy(alpha = 0.55f))))
+    ) {
+        val topThree = topSongs.take(3).mapNotNull { it.bigCoverUrl ?: it.coverUrl }
+        if (topThree.isNotEmpty()) {
+            TopThreeBackdrop(
+                urls = topThree,
+                tint = color,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+    }
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomChromePadding())
     ) {
@@ -141,18 +168,8 @@ fun GenreScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (topSongs.isNotEmpty()) 260.dp else 200.dp)
-                    .background(Brush.verticalGradient(listOf(color, color.copy(alpha = 0.55f), background)))
+                    .height(headerHeight)
             ) {
-                // Backdrop: the current top 3, blended into one picture.
-                val topThree = topSongs.take(3).mapNotNull { it.bigCoverUrl ?: it.coverUrl }
-                if (topThree.isNotEmpty()) {
-                    TopThreeBackdrop(
-                        urls = topThree,
-                        tint = color,
-                        modifier = Modifier.matchParentSize()
-                    )
-                }
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier
@@ -280,6 +297,7 @@ fun GenreScreen(
             }
         }
     }
+    }
 }
 
 /**
@@ -340,8 +358,7 @@ private fun TopThreeBackdrop(urls: List<String>, tint: Color, modifier: Modifier
                     Brush.verticalGradient(
                         0f to Color.Black.copy(alpha = 0.40f),
                         0.35f to Color.Transparent,
-                        0.62f to Color.Transparent,
-                        1f to page
+                        1f to page.copy(alpha = 0.25f)
                     )
                 )
         )

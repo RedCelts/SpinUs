@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -115,16 +116,24 @@ fun ArtistScreen(
         .take(5)
         .ifEmpty { tracks.take(5) }
 
+    val listState = rememberLazyListState()
+    Box(modifier = Modifier.fillMaxSize()) {
+    // Pinned header picture; the list scrolls over it.
+    FixedBackdrop(
+        backdropUrl = client.backdropFor(current),
+        fallbackUrl = photoUrl ?: albums.firstOrNull()?.let {
+            try { client.albumArtUrl(it, 600) } catch (e: Exception) { null }
+        },
+        listState = listState,
+        height = 320.dp
+    )
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomChromePadding())
     ) {
         item {
             BackdropHeader(
-                backdropUrl = client.backdropFor(current),
-                fallbackUrl = photoUrl ?: albums.firstOrNull()?.let {
-                    try { client.albumArtUrl(it, 600) } catch (e: Exception) { null }
-                },
                 height = 320.dp
             ) {
                 IconButton(
@@ -282,6 +291,7 @@ fun ArtistScreen(
                 }
             }
         }
+    }
     }
 }
 

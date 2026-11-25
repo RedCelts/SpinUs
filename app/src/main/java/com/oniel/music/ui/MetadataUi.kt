@@ -31,8 +31,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -55,23 +62,53 @@ fun JellyfinClient.backdropFor(details: ItemDetails?, width: Int = 1280): String
 }
 
 /**
- * Wide header image that fades into the page. Shows [backdropUrl] when
- * there is one; underneath it, a blurred, zoomed copy of [fallbackUrl]
- * (usually the cover) so the header is never empty. [content] is drawn
- * on top, anchored to the bottom.
+ * Fade-out mask: fully opaque down to [solidUntil] (fraction of the
+ * height), then fading to completely see-through at the bottom edge.
+ */
+fun Modifier.fadeDown(solidUntil: Float = 0.3f): Modifier = this
+    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+    .drawWithContent {
+        drawContent()
+        drawRect(
+            Brush.verticalGradient(
+                0f to Color.Black,
+                solidUntil to Color.Black,
+                1f to Color.Transparent
+            ),
+            blendMode = BlendMode.DstIn
+        )
+    }
+
+/**
+ * How far a list has scrolled past its header, 0..1 — for dimming a fixed
+ * backdrop as content slides over it. Read it inside graphicsLayer so
+ * scrolling doesn't recompose.
+ */
+fun LazyListState.headerScrollFraction(headerPx: Float): Float =
+    if (firstVisibleItemIndex > 0) 1f
+    else (firstVisibleItemScrollOffset / headerPx.coerceAtLeast(1f)).coerceIn(0f, 1f)
+
+/**
+ * A page's header picture, pinned behind the list (it does not scroll):
+ * [backdropUrl] when there is one, over a blurred, zoomed copy of
+ * [fallbackUrl] (usually the cover) so it's never empty. It fades down to
+ * fully see-through, and dims as the list scrolls over it.
  */
 @Composable
-fun BackdropHeader(
+fun FixedBackdrop(
     backdropUrl: String?,
     fallbackUrl: String?,
-    height: Dp = 280.dp,
-    content: @Composable BoxScope.() -> Unit = {}
+    listState: LazyListState,
+    height: Dp = 300.dp
 ) {
     val background = MaterialTheme.colorScheme.background
+    val headerPx = with(LocalDensity.current) { height.toPx() }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(height)
+            .height(height + 80.dp)
+            .graphicsLayer { alpha = 1f - 0.65f * listState.headerScrollFraction(headerPx) }
+            .fadeDown(solidUntil = 0.35f)
     ) {
         if (!fallbackUrl.isNullOrBlank()) {
             AsyncImage(
@@ -91,30 +128,52 @@ fun BackdropHeader(
                 modifier = Modifier.fillMaxSize()
             )
         }
+        // Light wash so the title and buttons stay readable.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         0f to background.copy(alpha = 0.25f),
-                        0.55f to background.copy(alpha = 0.45f),
-                        1f to background
+                        0.6f to background.copy(alpha = 0.40f),
+                        1f to background.copy(alpha = 0.55f)
                     )
                 )
         )
-        content()
     }
 }
 
 /**
+ * The first list item of a page with a [FixedBackdrop]: a see-through
+ * space the height of the header, with [content] (cover, title, back
+ * button…) drawn on it and scrolling away with the list.
+ */
+@Composable
+fun BackdropHeader(
+    height: Dp = 280.dp,
+    content: @Composable BoxScope.() -> Unit = {}
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height),
+        content = content
+    )
+}
+
+/**
  * Full-screen background for the player: the artist / album backdrop,
- * heavily dimmed into the theme background so text stays readable in
- * light and dark mode.
+ * dimmed into the theme background for readability and fading down to
+ * see-through at the bottom (the theme's scenery shows there).
  */
 @Composable
 fun ScreenBackdrop(backdropUrl: String?, fallbackUrl: String?) {
     val background = MaterialTheme.colorScheme.background
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .fadeDown(solidUntil = 0.4f)
+    ) {
         val url = backdropUrl ?: fallbackUrl
         if (!url.isNullOrBlank()) {
             AsyncImage(
@@ -132,8 +191,8 @@ fun ScreenBackdrop(backdropUrl: String?, fallbackUrl: String?) {
                 .background(
                     Brush.verticalGradient(
                         0f to background.copy(alpha = 0.55f),
-                        0.45f to background.copy(alpha = 0.78f),
-                        1f to background.copy(alpha = 0.96f)
+                        0.45f to background.copy(alpha = 0.72f),
+                        1f to background.copy(alpha = 0.85f)
                     )
                 )
         )

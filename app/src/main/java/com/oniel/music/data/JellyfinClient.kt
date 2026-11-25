@@ -44,7 +44,7 @@ class JellyfinClient(
 ) {
     companion object {
         const val CLIENT_NAME = "Oniel Music"
-        const val CLIENT_VERSION = "1.3.1"
+        const val CLIENT_VERSION = "1.3.2"
         /** Track ids per playlist request (keeps the URL short). */
         private const val PLAYLIST_CHUNK = 100
         /**
