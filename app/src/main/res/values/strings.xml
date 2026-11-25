@@ -113,7 +113,8 @@
     <string name="library_title">Library</string>
     <string name="library_artists">Artists</string>
     <string name="library_albums">Albums</string>
-    <string name="library_songs">Songs</string>
+    <string name="library_songs">Singles</string>
+    <string name="library_no_singles">No singles yet. Songs that aren\'t part of a full album show here.</string>
     <string name="library_playlists">Playlists</string>
     <string name="library_liked">Liked</string>
     <string name="liked_empty">No liked songs yet.</string>

@@ -132,6 +132,16 @@ fun LibraryScreen(
         }
     }
 
+    // Singles only: songs with no album, or from a release of 1-3 tracks
+    // (a single, maybe with a remix) - not songs from full albums.
+    val singles = remember(tracks) {
+        // Release size = how many of its songs are in the library.
+        val albumSize = tracks.groupingBy { it.albumId }.eachCount()
+        tracks.filter { t ->
+            val id = t.albumId
+            id == null || (albumSize[id] ?: 0) <= 3
+        }
+    }
     val liked = remember(tracks) {
         tracks.filter { client.favoriteOverride(it.id) ?: it.isFavorite }
     }
@@ -177,7 +187,7 @@ fun LibraryScreen(
                     onArtistClick = onArtistClick
                 )
                 1 -> AlbumsSection(albums = albums, client = client, onAlbumClick = onAlbumClick)
-                2 -> SongsSection(tracks = tracks, player = player, onTrackPlayed = onTrackPlayed)
+                2 -> SongsSection(tracks = singles, player = player, onTrackPlayed = onTrackPlayed)
                 3 -> PlaylistsSection(playlists = playlists)
                 else -> LikedSection(
                     tracks = liked,
@@ -325,6 +335,15 @@ private fun SongsSection(
     player: PlayerController,
     onTrackPlayed: () -> Unit
 ) {
+    if (tracks.isEmpty()) {
+        Text(
+            text = stringResource(R.string.library_no_singles),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(16.dp)
+        )
+        return
+    }
     LazyColumn(contentPadding = PaddingValues(bottom = bottomChromePadding())) {
         itemsIndexed(tracks) { index, track ->
             TrackRow(

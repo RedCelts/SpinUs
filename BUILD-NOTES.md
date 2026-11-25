@@ -715,3 +715,6 @@ the v1.2 script.)
 - Tabs are a `HorizontalPager`: swipe left/right between Artists, Albums,
   Songs, Playlists, Liked; tapping a tab animates to it.
 - Liked respects favorites changed in this session (`favoriteOverride`).
+- Songs tab → "Singles": only songs with no album, or from a release with
+  1–3 of its songs in the library (single + remix); full-album songs are
+  left out (they're under Albums). Empty-state text when there are none.
