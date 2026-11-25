@@ -4,6 +4,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -127,9 +141,18 @@ fun GenreScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
+                    .height(if (topSongs.isNotEmpty()) 260.dp else 200.dp)
                     .background(Brush.verticalGradient(listOf(color, color.copy(alpha = 0.55f), background)))
             ) {
+                // Backdrop: the current top 3, blended into one picture.
+                val topThree = topSongs.take(3).mapNotNull { it.bigCoverUrl ?: it.coverUrl }
+                if (topThree.isNotEmpty()) {
+                    TopThreeBackdrop(
+                        urls = topThree,
+                        tint = color,
+                        modifier = Modifier.matchParentSize()
+                    )
+                }
                 IconButton(
                     onClick = onBack,
                     modifier = Modifier
@@ -147,7 +170,9 @@ fun GenreScreen(
                 }
                 Text(
                     text = genreName,
-                    style = MaterialTheme.typography.displaySmall,
+                    style = MaterialTheme.typography.displaySmall.copy(
+                        shadow = Shadow(Color.Black.copy(alpha = 0.55f), blurRadius = 16f)
+                    ),
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
                     maxLines = 2,
@@ -254,6 +279,72 @@ fun GenreScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * The genre's top three covers blended into one backdrop: each cover
+ * spans its third (plus overlap) and fades into its neighbours, then the
+ * whole is softened, pushed toward the genre colour, darkened at the top
+ * for the back button and faded into the page at the bottom.
+ */
+@Composable
+private fun TopThreeBackdrop(urls: List<String>, tint: Color, modifier: Modifier = Modifier) {
+    val page = MaterialTheme.colorScheme.background
+    val punchy = remember { ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(1.25f) }) }
+    BoxWithConstraints(modifier = modifier.clipToBounds()) {
+        val n = urls.size
+        val segment = maxWidth / n
+        val width = if (n == 1) maxWidth else segment * 1.6f
+        urls.forEachIndexed { i, url ->
+            val stops: Array<Pair<Float, Color>> = when {
+                n == 1 -> arrayOf(0f to Color.Black, 1f to Color.Black)
+                i == 0 -> arrayOf(0f to Color.Black, 0.62f to Color.Black, 1f to Color.Transparent)
+                i == n - 1 -> arrayOf(0f to Color.Transparent, 0.38f to Color.Black, 1f to Color.Black)
+                else -> arrayOf(0f to Color.Transparent, 0.32f to Color.Black, 0.68f to Color.Black, 1f to Color.Transparent)
+            }
+            val x = when {
+                n == 1 -> 0.dp
+                i == 0 -> 0.dp
+                i == n - 1 -> maxWidth - width
+                else -> segment * i - (width - segment) / 2
+            }
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                colorFilter = punchy,
+                modifier = Modifier
+                    .offset(x = x)
+                    .width(width)
+                    .fillMaxHeight()
+                    .blur(1.5.dp)
+                    // Fade the edges so the covers melt into each other.
+                    .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(Brush.horizontalGradient(*stops), blendMode = BlendMode.DstIn)
+                    }
+            )
+        }
+        // Edits: genre-colour wash, dark top, fade into the page.
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(tint.copy(alpha = 0.28f))
+        )
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.40f),
+                        0.35f to Color.Transparent,
+                        0.62f to Color.Transparent,
+                        1f to page
+                    )
+                )
+        )
     }
 }
 

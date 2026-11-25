@@ -112,7 +112,8 @@ class DeezerClient(private val http: OkHttpClient) {
         coverUrl = optJSONObject("album")?.optString("cover_medium")?.ifBlank { null },
         link = optString("link").ifBlank { null },
         durationSec = optInt("duration"),
-        previewUrl = optString("preview").ifBlank { null }
+        previewUrl = optString("preview").ifBlank { null },
+        bigCoverUrl = optJSONObject("album")?.optString("cover_xl")?.ifBlank { null }
     )
 
     private fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }

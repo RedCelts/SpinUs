@@ -646,3 +646,11 @@ the v1.2 script.)
 - Albums without a cover show the album artist's picture
   (`albumArtUrl` / album page header); tracks whose album has no cover
   use the artist picture too (`trackArtUrl`).
+
+## v1.3.1 — Genre header from the current top 3 (2026-11-24)
+- Genre page header (260 dp) is a blend of the chart's top 3 album covers
+  (Deezer `cover_xl`): each spans its third plus overlap with feathered
+  edges (offscreen layer + `DstIn` gradient mask), saturation ×1.25, a
+  slight blur (Android 12+), a 28% genre-colour wash, dark top for the
+  back button and a fade into the page. Rebuilt every open, so it always
+  matches the chart. Falls back to the plain colour header.
