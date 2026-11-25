@@ -102,6 +102,21 @@ fun HomeScreen(
     var openAddition by remember { mutableStateOf<com.oniel.music.data.Addition?>(null) }
 
     LaunchedEffect(Unit) {
+        // Fresh app start: show last session's Home from the phone at once.
+        if (cached == null) {
+            HomeDiskCache.load(context)?.let { d ->
+                if (HomeCache.data == null) HomeCache.restore(d)
+                tiles = d.tiles
+                newReleases = d.newReleases
+                rediscover = d.rediscover
+                recentlyPlayed = d.recentlyPlayed
+                recentlyAdded = d.recentlyAdded
+                topArtists = d.topArtists
+                allTracks = d.allTracks
+                libraryAlbums = d.libraryAlbums
+                loading = false
+            }
+        }
         if (cached != null && !HomeCache.isStale()) return@LaunchedEffect
         try {
             val nowMs = System.currentTimeMillis()
@@ -140,14 +155,15 @@ fun HomeScreen(
                 .filter { it.name.isNotBlank() }
                 .sortedByDescending { it.plays }
                 .take(6)
-            HomeCache.store(
-                HomeCache.Data(
-                    tiles, newReleases, rediscover, recentlyPlayed, recentlyAdded,
-                    topArtists, allTracks, libraryAlbums
-                )
+            val fresh = HomeCache.Data(
+                tiles, newReleases, rediscover, recentlyPlayed, recentlyAdded,
+                topArtists, allTracks, libraryAlbums
             )
+            HomeCache.store(fresh)
+            HomeDiskCache.save(context, fresh)
         } catch (e: Exception) {
-            if (cached == null) loadError = true
+            // Keep showing the saved shelves if there are any.
+            if (HomeCache.data == null) loadError = true
         } finally {
             loading = false
         }
@@ -585,8 +601,15 @@ object HomeCache {
         loadedAt = System.currentTimeMillis()
     }
 
-    /** Forget everything (log out / server change). */
-    fun clear() {
+    /** Data read back from the phone: shown at once but treated as old. */
+    fun restore(d: Data) {
+        data = d
+        loadedAt = 0L
+    }
+
+    /** Forget everything (log out / server change), including the saved copy. */
+    fun clear(context: android.content.Context? = null) {
+        context?.let { HomeDiskCache.delete(it) }
         data = null
         loadedAt = 0L
         picks = emptyList()

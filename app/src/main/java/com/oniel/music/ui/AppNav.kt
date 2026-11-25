@@ -361,7 +361,7 @@ fun OnielMusicApp() {
                                     onSyncHistory = player::syncHistoryNow,
                                     onBack = { navController.popBackStack() },
                                     onLoggedOut = { newServer ->
-                                        HomeCache.clear()
+                                        HomeCache.clear(context)
                                         // Log out closes the presence socket and stops
                                         // playback; the next sign-in reopens the socket.
                                         client.closePresence()

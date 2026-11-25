@@ -690,6 +690,10 @@ the v1.2 script.)
   Home is instant, and a load older than 5 min refreshes quietly in the
   background (old shelves stay up). The four reads run in parallel.
   "You might enjoy" is reused for the same load. Cleared on log out.
+- `HomeDiskCache`: the last Home load is also saved on the phone
+  (`files/home_cache.json`, written tmp-then-rename after each server
+  load). A fresh app start shows it immediately — no spinner, no network
+  needed — then refreshes in the background. Deleted on log out.
 - Genre page: only the chart gates the page; "In library" badges and your
   albums fill in after, with all library-genre reads in parallel.
   `LibraryIndex` reuses Home's song list (else a light `getTrackIndex`),
