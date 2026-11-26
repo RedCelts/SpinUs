@@ -244,16 +244,8 @@ fun HomeScreen(
         }
         HomeCache.mixes = mixes
         HomeCache.picksFor = libraryAlbums
-        additionsRefreshing = true
-        try {
-            additions = recs.additions(profile, allTracks, libraryAlbums, nowMs, force = refreshTick > 0)
-            HomeCache.additions = additions
-            additionsError = false
-        } catch (e: Exception) {
-            additionsError = true
-        } finally {
-            additionsRefreshing = false
-        }
+        // (Recommended additions, New releases, Rediscover and Recommended
+        // stations were removed from Home.)
     }
 
     openAddition?.let { addition ->
@@ -269,7 +261,7 @@ fun HomeScreen(
     // (shelves in screen order; later shelves give up the repeats).
     val guarded = remember(tiles, picks, newReleases, rediscover, recentlyPlayed, recentlyAdded) {
         com.oniel.music.data.limitRepeats(
-            listOf<List<Any>>(tiles, picks, newReleases, rediscover, recentlyPlayed, recentlyAdded),
+            listOf<List<Any>>(tiles, picks, emptyList<Album>(), emptyList<Album>(), recentlyPlayed, recentlyAdded),
             albumIdOf = { item ->
                 when (item) {
                     is Track -> item.albumId
@@ -426,41 +418,6 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
-            item {
-                AdditionsRow(
-                    items = additions,
-                    refreshing = additionsRefreshing,
-                    error = additionsError,
-                    onRefresh = { refreshTick++ },
-                    onOpen = { openAddition = it }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            // (2) New releases.
-            if (shownNew.isNotEmpty()) {
-                item { ShelfHeader(title = stringResource(R.string.shelf_new_releases)) { onOpenLibrary(1) } }
-                item {
-                    AlbumShelf(
-                        albums = shownNew,
-                        client = client,
-                        onAlbumClick = onAlbumClick
-                    )
-                }
-            }
-
-            // (3) Rediscover albums.
-            if (shownRediscover.isNotEmpty()) {
-                item { ShelfHeader(title = stringResource(R.string.shelf_rediscover)) { onOpenLibrary(1) } }
-                item {
-                    AlbumShelf(
-                        albums = shownRediscover,
-                        client = client,
-                        onAlbumClick = onAlbumClick
-                    )
-                }
-            }
-
             // (4) Recently played.
             if (shownRecentPlayed.isNotEmpty()) {
                 item { ShelfHeader(title = stringResource(R.string.shelf_recently_played)) { onOpenLibrary(1) } }
@@ -482,37 +439,6 @@ fun HomeScreen(
                         client = client,
                         onAlbumClick = onAlbumClick
                     )
-                }
-            }
-
-            // (6) Recommended stations: rule 7 (falls back to the most-played
-            // artists until the play log has 60 days of plays to go on).
-            val stationList = stations.ifEmpty { topArtists }
-            if (stationList.isNotEmpty()) {
-                item { ShelfHeader(title = stringResource(R.string.shelf_stations)) { onOpenLibrary(0) } }
-                item {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(stationList) { station ->
-                            StationCard(
-                                station = station,
-                                imageUrl = station.coverAlbum?.artistId?.let {
-                                    client.artistImageUrl(it, 300)
-                                },
-                                fallbackUrl = station.coverAlbum?.let {
-                                    client.albumArtUrl(it, 300)
-                                },
-                                onClick = {
-                                    scope.launch {
-                                        val queue = buildStation(station, client, player, allTracks)
-                                        if (queue.isNotEmpty()) player.play(queue, 0)
-                                    }
-                                }
-                            )
-                        }
-                    }
                 }
             }
 
