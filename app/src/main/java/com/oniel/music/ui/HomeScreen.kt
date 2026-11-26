@@ -100,11 +100,18 @@ fun HomeScreen(
     var stations by remember { mutableStateOf(HomeCache.stations) }
     var mixes by remember { mutableStateOf(HomeCache.mixes) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var additions by remember { mutableStateOf(recs.cachedAdditions()) }
+    var additions by remember { mutableStateOf(HomeCache.additions) }
     var additionsRefreshing by remember { mutableStateOf(false) }
     var additionsError by remember { mutableStateOf(false) }
     var refreshTick by remember { mutableStateOf(0) }
     var openAddition by remember { mutableStateOf<com.oniel.music.data.Addition?>(null) }
+
+    LaunchedEffect(Unit) {
+        if (additions.isEmpty()) {
+            additions = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { recs.cachedAdditions() }
+            HomeCache.additions = additions
+        }
+    }
 
     LaunchedEffect(Unit) {
         // Fresh app start: show last session's Home from the phone at once.
@@ -135,23 +142,22 @@ fun HomeScreen(
                 val all = a.await()
                 HomeLoad(all, all, t.await(), n.await())
             }
-            tiles = Scoring.scoreTiles(tracks, nowMs)
-            newReleases = Scoring.newReleases(albums, nowMs)
-            rediscover = Scoring.rediscoverAlbums(albumsWithPlays, nowMs)
-            // Recently played from the enriched list: the server-side
-            // DatePlayed sort on albums is fed by the same counters that
-            // never move, so it would order nothing.
-            recentlyPlayed = albumsWithPlays
+            // The shelf maths runs off the main thread, so the screen
+            // never freezes while a big library is scored.
+            val fresh = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val fTiles = Scoring.scoreTiles(tracks, nowMs)
+            val fNew = Scoring.newReleases(albums, nowMs)
+            val fRediscover = Scoring.rediscoverAlbums(albumsWithPlays, nowMs)
+            // Recently played: albums carry their tracks' last-played dates.
+            val fRecent = albumsWithPlays
                 .filter { it.lastPlayedDate != null }
                 .sortedByDescending { it.lastPlayedDate }
                 .take(20)
             // Rule 6: albums newest first, only ones with scanned songs.
-            recentlyAdded = com.oniel.music.data.RecentlyAddedRule.apply(added, tracks)
-            allTracks = tracks
-            libraryAlbums = albums
+            val fAdded = com.oniel.music.data.RecentlyAddedRule.apply(added, tracks)
             // Recommended stations: the artists with the most played albums
             // (play counts summed from their tracks).
-            topArtists = albumsWithPlays
+            val fTop = albumsWithPlays
                 .groupBy { it.artist }
                 .map { (artist, artistAlbums) ->
                     ArtistStation(
@@ -163,12 +169,18 @@ fun HomeScreen(
                 .filter { it.name.isNotBlank() }
                 .sortedByDescending { it.plays }
                 .take(6)
-            val fresh = HomeCache.Data(
-                tiles, newReleases, rediscover, recentlyPlayed, recentlyAdded,
-                topArtists, allTracks, libraryAlbums
-            )
+            HomeCache.Data(fTiles, fNew, fRediscover, fRecent, fAdded, fTop, tracks, albums)
+            }
+            tiles = fresh.tiles
+            newReleases = fresh.newReleases
+            rediscover = fresh.rediscover
+            recentlyPlayed = fresh.recentlyPlayed
+            recentlyAdded = fresh.recentlyAdded
+            topArtists = fresh.topArtists
+            allTracks = fresh.allTracks
+            libraryAlbums = fresh.libraryAlbums
             HomeCache.store(fresh)
-            HomeDiskCache.save(context, fresh)
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { HomeDiskCache.save(context, fresh) }
         } catch (e: Exception) {
             // Keep showing the saved shelves if there are any.
             if (HomeCache.data == null) loadError = true
@@ -181,12 +193,16 @@ fun HomeScreen(
     LaunchedEffect(libraryAlbums, refreshTick) {
         if (libraryAlbums.isEmpty()) return@LaunchedEffect
         // Already worked out for this library load: keep it.
-        if (refreshTick == 0 && HomeCache.picksFor === libraryAlbums && picks.isNotEmpty()) return@LaunchedEffect
+        // (Even when they came out empty: recomputing on every return to
+        // Home is what made going back slow.)
+        if (refreshTick == 0 && HomeCache.picksFor === libraryAlbums) return@LaunchedEffect
         val nowMs = System.currentTimeMillis()
-        val plays = player.playLogEntries()
-        val profile = com.oniel.music.data.Taste.build(plays, allTracks, nowMs)
+        val plays = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { player.playLogEntries() }
         val signals = try { player.signalSnapshot() } catch (e: Exception) { com.oniel.music.data.SignalSnapshot.EMPTY }
-        val ctx = com.oniel.music.data.RuleContext(allTracks, plays, signals, nowMs)
+        val (profile, ctx) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.oniel.music.data.Taste.build(plays, allTracks, nowMs) to
+                com.oniel.music.data.RuleContext(allTracks, plays, signals, nowMs)
+        }
         picks = try {
             recs.youMightEnjoy(client, profile, libraryAlbums, allTracks, plays, nowMs)
                 // Guardrails 2 + 3 on single-song picks.
@@ -208,7 +224,7 @@ fun HomeScreen(
             com.oniel.music.data.StationRules.seeds(ctx, top3)
         }
         if (seeds.size >= 1) {
-            stations = seeds.map { (name, plays) ->
+            stations = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { seeds.map { (name, plays) ->
                 val key = com.oniel.music.data.matchKey(name)
                 ArtistStation(
                     name = name,
@@ -219,7 +235,7 @@ fun HomeScreen(
                             allTracks.any { t -> t.albumId == a.id && ctx.artistsOf(t).any { com.oniel.music.data.matchKey(it) == key } }
                         }
                 )
-            }
+            } }
             HomeCache.stations = stations
         }
         // Rule 8: Made for you (artist, decade and time-of-day mixes; daily).
@@ -231,6 +247,7 @@ fun HomeScreen(
         additionsRefreshing = true
         try {
             additions = recs.additions(profile, allTracks, libraryAlbums, nowMs, force = refreshTick > 0)
+            HomeCache.additions = additions
             additionsError = false
         } catch (e: Exception) {
             additionsError = true
@@ -739,6 +756,8 @@ object HomeCache {
     @Volatile var picksFor: List<Album>? = null
     @Volatile var stations: List<ArtistStation> = emptyList()
     @Volatile var mixes: List<com.oniel.music.data.Mix> = emptyList()
+    /** "Recommended additions" last shown (saves a file read on every return to Home). */
+    @Volatile var additions: List<com.oniel.music.data.Addition> = emptyList()
 
     fun isStale() = System.currentTimeMillis() - loadedAt > MAX_AGE_MS
 
@@ -766,5 +785,6 @@ object HomeCache {
         picksFor = null
         stations = emptyList()
         mixes = emptyList()
+        additions = emptyList()
     }
 }
