@@ -270,4 +270,15 @@
     <string name="friend_added">You and %1$s are now friends</string>
     <string name="friend_code_bad">That isn\'t a valid SpinUs friend code.</string>
     <string name="friend_scan_unavailable">The scanner couldn\'t open. Scan the code with your camera app instead.</string>
+    <!-- v2.3.0 widget -->
+    <string name="widget_description">Now playing, controls and friends listening</string>
+    <string name="widget_nothing">Nothing playing</string>
+    <string name="widget_art">Album art</string>
+    <string name="widget_prev">Previous</string>
+    <string name="widget_play">Play or pause</string>
+    <string name="widget_next">Next</string>
+    <string name="widget_friends_none">No friends listening right now</string>
+    <string name="widget_friends_one">%1$s is listening</string>
+    <string name="widget_friends_two">%1$s and %2$s are listening</string>
+    <string name="widget_friends_many">%1$s, %2$s and %3$d more are listening</string>
 </resources>

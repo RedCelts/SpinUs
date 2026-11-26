@@ -168,6 +168,7 @@ fun OnielMusicApp() {
         if (auth == null) { Inbox.unread = 0; return@LaunchedEffect }
         while (true) {
             try { Inbox.unread = client.unreadRecommendations() } catch (e: Exception) { }
+            SpinUsWidget.refreshFriendsAsync(context)
             kotlinx.coroutines.delay(60_000)
         }
     }

@@ -396,6 +396,57 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    // ---- Home-screen widget ----
+
+    /** Keeps the widget in step with the active player's song and play state. */
+    private val widgetListener = object : Player.Listener {
+        override fun onEvents(p: Player, events: Player.Events) {
+            if (p !== player) return
+            if (events.containsAny(
+                    Player.EVENT_MEDIA_ITEM_TRANSITION,
+                    Player.EVENT_IS_PLAYING_CHANGED,
+                    Player.EVENT_MEDIA_METADATA_CHANGED
+                )
+            ) pushWidget()
+        }
+    }
+
+    private fun pushWidget() {
+        val p = player ?: return
+        val md = p.mediaMetadata
+        try {
+            SpinUsWidget.onPlayback(
+                this,
+                md.title?.toString(),
+                md.artist?.toString(),
+                p.isPlaying || p.playWhenReady,
+                md.artworkUri
+            )
+        } catch (e: Exception) {
+            // The widget is an extra; never let it disturb playback.
+        }
+    }
+
+    /** Widget buttons (play/pause, next, previous). */
+    override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
+        val p = player
+        when (intent?.action) {
+            SpinUsWidget.ACTION_TOGGLE -> {
+                if (p != null && p.mediaItemCount > 0) { if (p.isPlaying) p.pause() else p.play() }
+                return START_NOT_STICKY
+            }
+            SpinUsWidget.ACTION_NEXT -> {
+                if (p != null && p.hasNextMediaItem()) p.seekToNextMediaItem()
+                return START_NOT_STICKY
+            }
+            SpinUsWidget.ACTION_PREV -> {
+                if (p != null && p.mediaItemCount > 0) p.seekToPrevious()
+                return START_NOT_STICKY
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
     /** Attached to whichever player is active. */
     private val activeListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -507,6 +558,16 @@ class PlaybackService : MediaLibraryService() {
         spare = second
         first.addListener(layoutListener)
         second.addListener(layoutListener)
+        first.addListener(widgetListener)
+        second.addListener(widgetListener)
+        pushWidget()
+        // Friends listening (on the widget): refreshed every 2 minutes while playing.
+        serviceScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(120_000)
+                if (player?.isPlaying == true) SpinUsWidget.refreshFriendsAsync(this@PlaybackService)
+            }
+        }
         mediaSession = MediaLibrarySession.Builder(this, first, sessionCallback)
             .setSessionActivity(
                 android.app.PendingIntent.getActivity(
@@ -707,6 +768,7 @@ class PlaybackService : MediaLibraryService() {
         outgoing.volume = 1f
         // The ramp keeps running on the incoming player until fadeTotalMs.
         preloadUpcoming()
+        pushWidget()
     }
 
     /** Fade finished: everything at full volume, nothing pending. */
