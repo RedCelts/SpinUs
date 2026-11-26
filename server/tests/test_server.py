@@ -576,7 +576,15 @@ async def test_fetch_progress(aiohttp_client, music, tmp_path):
     p = st["fetchProgress"]
     assert p["total"] > 0 and p["done"] == 0 and p["current"]["kind"] in ("lyrics", "album", "artist", "track")
     assert sum(v["total"] for v in p["byKind"].values()) == p["total"]
+    assert "etaSeconds" not in p  # nothing done yet: no estimate
     gate.set()
+    for _ in range(100):
+        p2 = (await j(c, "/api/library/status", h))["fetchProgress"]
+        if not p2 or p2["done"] >= 1:
+            break
+        await asyncio.sleep(0.02)
+    if p2:
+        assert p2["etaSeconds"] >= 0
     while server.fetcher.running:
         await asyncio.sleep(0.05)
     st = await j(c, "/api/library/status", h)

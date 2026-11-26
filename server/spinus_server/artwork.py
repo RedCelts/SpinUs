@@ -8,6 +8,7 @@ RETRY_DAYS, so new releases that Deezer adds later still get picked up.
 """
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import re
@@ -280,9 +281,11 @@ class ArtworkFetcher:
             self.progress = {"done": 0, "total": len(jobs), "found": 0, "current": None,
                              "byKind": {k: {"done": 0, "total": n} for k, n in kinds.items() if n}}
             in_a_row = pauses = 0
+            recent: collections.deque = collections.deque(maxlen=50)  # seconds per item, newest last
             for kind, item in jobs:
                 if self.stop:
                     break
+                item_started = time.time()
                 name = getattr(item, "name", None) or getattr(item, "title", "")
                 self.progress["current"] = {"kind": kind, "name": name}
                 p, error = None, None
@@ -298,6 +301,11 @@ class ArtworkFetcher:
                         self._wait(RETRY_WAITS[attempt], f"{type(e).__name__}: retrying")
                 self.progress["done"] += 1
                 self.progress["byKind"][kind]["done"] += 1
+                # Time left: the pace of the last 50 items x what's left
+                # (pauses are not counted; retries are).
+                recent.append(time.time() - item_started)
+                remaining = self.progress["total"] - self.progress["done"]
+                self.progress["etaSeconds"] = round(remaining * sum(recent) / len(recent))
                 if error is not None:
                     failed += 1
                     self.progress["errors"] = failed

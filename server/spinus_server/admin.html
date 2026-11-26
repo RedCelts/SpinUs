@@ -167,13 +167,23 @@ async function load() {
 const KIND = { album: "Album covers", artist: "Artist photos", track: "Song covers", lyrics: "Lyrics" };
 const KIND_ONE = { album: "album cover", artist: "artist photo", track: "song cover", lyrics: "lyrics" };
 let fetchTimer = null;
+// " · about 12 min left (done ~3:40 PM)" once there's a pace to go on.
+function eta(p) {
+  if (p.etaSeconds == null || p.done < 3) return " · estimating…";
+  const s = p.etaSeconds;
+  if (s < 60) return " · less than a minute left";
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  const left = h ? h + " h " + m + " min" : m + " min";
+  const done = new Date(Date.now() + s * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return " · about " + left + " left (done ~" + done + ")";
+}
 function showFetch(st) {
   const p = st.fetchProgress;
   $("fetchBox").hidden = !(st.fetching && p && p.total);
   if (!$("fetchBox").hidden) {
     const pct = Math.floor(100 * p.done / p.total);
     $("fetchBar").style.width = pct + "%";
-    $("fetchPct").textContent = p.done + " / " + p.total + " · " + pct + "%";
+    $("fetchPct").textContent = p.done + " / " + p.total + " · " + pct + "%" + eta(p);
     if (p.paused) {
       const at = new Date(p.paused.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
       $("fetchNow").textContent = "Paused (" + p.paused.reason + "), resuming at " + at + " · " + p.found + " found so far";
