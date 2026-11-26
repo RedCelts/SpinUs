@@ -391,6 +391,26 @@ class PlayerController(application: Application) : AndroidViewModel(application)
     /** Play a single track on its own. */
     fun playSingle(track: Track) = play(listOf(track), 0)
 
+    /** Put [tracks] right after the song playing now (or play them if nothing is). */
+    fun playNext(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        val c = controller
+        if (c == null || queue.isEmpty() || c.mediaItemCount == 0) { play(tracks); return }
+        val at = (c.currentMediaItemIndex + 1).coerceIn(0, c.mediaItemCount)
+        // The app's list first, so the timeline callback sees it already matches.
+        queue = queue.take(at) + tracks + queue.drop(at)
+        c.addMediaItems(at, tracks.map { it.toMediaItem() })
+    }
+
+    /** Add [tracks] to the end of the queue (or play them if nothing is playing). */
+    fun addToQueue(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        val c = controller
+        if (c == null || queue.isEmpty() || c.mediaItemCount == 0) { play(tracks); return }
+        queue = queue + tracks
+        c.addMediaItems(tracks.map { it.toMediaItem() })
+    }
+
     fun playAt(index: Int) {
         val c = controller ?: return
         if (index !in queue.indices) return

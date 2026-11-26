@@ -386,8 +386,17 @@ fun PlayerScreen(
                     modifier = Modifier.padding(top = 2.dp)
                 )
             }
-            // Heart: add to / remove from Liked.
-            LikeButton(liked = liked, onClick = toggleLike)
+            // Heart (Liked), with add-to-playlist right below it.
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                LikeButton(liked = liked, onClick = toggleLike)
+                IconButton(onClick = { showAddToPlaylist = true }) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = stringResource(R.string.player_add_to_playlist),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
             }
         }
 
@@ -446,7 +455,7 @@ fun PlayerScreen(
         }
 
         item {
-            // Listener icon directly above the "+" add-to-playlist button.
+            // Friends listening to the same song (tap: send a reaction).
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -479,13 +488,6 @@ fun PlayerScreen(
                                 }
                             }
                         }
-                        Spacer(modifier = Modifier.height(6.dp))
-                    }
-                    IconButton(onClick = { showAddToPlaylist = true }) {
-                        Icon(
-                            imageVector = Icons.Filled.Add,
-                            contentDescription = stringResource(R.string.player_add_to_playlist)
-                        )
                     }
                 }
             }

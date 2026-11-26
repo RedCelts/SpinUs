@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -59,6 +60,19 @@ import kotlinx.coroutines.launch
  * passing the client down.
  */
 val LocalSpinUs = staticCompositionLocalOf<SpinUsClient?> { null }
+
+/** The player, for Play next / Add to queue in ⋮ menus. */
+val LocalPlayer = staticCompositionLocalOf<PlayerController?> { null }
+
+/** Every song the target stands for, in order (album order / artist's songs). */
+private suspend fun ActionTarget.tracks(client: SpinUsClient): List<Track> = when (this) {
+    is ActionTarget.Song -> listOf(track)
+    is ActionTarget.AlbumItem -> client.getAlbumTracks(albumId)
+    is ActionTarget.ArtistItem -> {
+        val id = artistId ?: client.getArtistByName(name)?.id
+        if (id == null) emptyList() else client.getArtistTracks(id)
+    }
+}
 
 /**
  * Height of the frosted bottom chrome (mini player + tab bar + system nav
@@ -148,6 +162,36 @@ fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
             )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            val player = LocalPlayer.current
+            if (player != null) {
+                fun queueAction(next: Boolean) {
+                    open = false
+                    scope.launch {
+                        try {
+                            val list = target.tracks(client)
+                            if (list.isEmpty()) throw IllegalStateException("no songs")
+                            if (next) player.playNext(list) else player.addToQueue(list)
+                            Toast.makeText(
+                                context,
+                                context.getString(if (next) R.string.queue_next_done else R.string.queue_add_done, target.title),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        } catch (e: Exception) {
+                            Toast.makeText(context, R.string.action_failed, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.queue_next)) },
+                    leadingIcon = { Icon(Icons.Filled.PlayArrow, contentDescription = null) },
+                    onClick = { queueAction(next = true) }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.queue_add)) },
+                    leadingIcon = { Icon(Icons.Filled.List, contentDescription = null) },
+                    onClick = { queueAction(next = false) }
+                )
+            }
             val isFav = favorite == true
             DropdownMenuItem(
                 text = {

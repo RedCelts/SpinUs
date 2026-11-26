@@ -255,7 +255,7 @@ fun OnielMusicApp() {
         noiseFactor = 0f
     )
 
-    CompositionLocalProvider(LocalSpinUs provides client) {
+    CompositionLocalProvider(LocalSpinUs provides client, LocalPlayer provides player) {
         Scaffold(
             // Edge to edge: the status / navigation bars are transparent and
             // each screen pads itself (backdrops run up under the status bar).
