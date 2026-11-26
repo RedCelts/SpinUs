@@ -281,4 +281,15 @@
     <string name="widget_friends_one">%1$s is listening</string>
     <string name="widget_friends_two">%1$s and %2$s are listening</string>
     <string name="widget_friends_many">%1$s, %2$s and %3$d more are listening</string>
+    <!-- v2.4.0 levels -->
+    <string name="level_label">Level %1$d</string>
+    <string name="level_short">Level %1$d · %2$s</string>
+    <string name="level_total_xp">%1$s XP</string>
+    <string name="level_to_next">%1$s XP to Level %2$d</string>
+    <string name="level_max">Top level reached!</string>
+    <string name="level_next_title">Next title: %1$s at Level %2$d</string>
+    <string name="level_breakdown">Where your XP comes from</string>
+    <string name="level_part_detail">%1$s × %2$d XP</string>
+    <string name="level_tap_details">Tap to see where your XP comes from</string>
+    <string name="level_up">🎉 Level up! You\'re now Level %1$d · %2$s</string>
 </resources>
