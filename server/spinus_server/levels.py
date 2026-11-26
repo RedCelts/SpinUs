@@ -26,42 +26,67 @@ SOURCES = [
     ("recommendations", "Recommendations sent", 20),
 ]
 
-# Titles by the level they start at.
-TITLES = [
-    (1, "Newcomer"),
-    (3, "Listener"),
-    (6, "Explorer"),
-    (10, "Crate Digger"),
-    (15, "Tastemaker"),
-    (20, "Audiophile"),
-    (30, "Maestro"),
-    (40, "Virtuoso"),
-    (50, "Legend"),
+# Rank names, in order. Each title starts one level further after the
+# last than the one before it did (levels 1, 2, 4, 7, 11, 16, 22, ...), and
+# every level costs more XP than the last, so each title is harder to earn.
+# After the last name, ranks keep coming forever: Immortal II, III, IV, ...
+TITLE_NAMES = [
+    "Newcomer", "Listener", "Explorer", "Crate Digger", "Tastemaker", "Audiophile",
+    "Connoisseur", "Maestro", "Virtuoso", "Legend", "Icon", "Mythic", "Immortal",
 ]
-MAX_LEVEL = 99
+CURVE = 2.2  # XP to reach a level grows faster than the level squared: no top level
 
 
 def xp_for_level(level: int) -> int:
-    """Total XP needed to reach [level] (level 1 = 0). Each level costs a bit more than the last."""
-    return 60 * (level - 1) ** 2
+    """Total XP needed to reach [level] (level 1 = 0)."""
+    return round(60 * (level - 1) ** CURVE)
 
 
 def level_for_xp(xp: int) -> int:
-    level = 1
-    while level < MAX_LEVEL and xp >= xp_for_level(level + 1):
+    level = max(1, int((max(xp, 0) / 60) ** (1 / CURVE)) + 1)
+    while xp_for_level(level + 1) <= xp:  # fix rounding at the edges
         level += 1
+    while level > 1 and xp_for_level(level) > xp:
+        level -= 1
     return level
 
 
+def _roman(n: int) -> str:
+    out = ""
+    for value, sym in ((1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+                       (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")):
+        while n >= value:
+            out += sym
+            n -= value
+    return out
+
+
+def _rank_name(rank: int) -> str:
+    """Rank 0 = Newcomer ... past the list: Immortal II, Immortal III, ..."""
+    if rank < len(TITLE_NAMES):
+        return TITLE_NAMES[rank]
+    return f"{TITLE_NAMES[-1]} {_roman(rank - len(TITLE_NAMES) + 2)}"
+
+
+def _rank_start(rank: int) -> int:
+    """Level where rank [rank] begins: 1, 2, 4, 7, 11, 16, ... (gap grows by one each time)."""
+    return 1 + rank * (rank + 1) // 2
+
+
+def _rank_for_level(level: int) -> int:
+    rank = 0
+    while _rank_start(rank + 1) <= level:
+        rank += 1
+    return rank
+
+
 def title_for(level: int) -> str:
-    return [t for start, t in TITLES if level >= start][-1]
+    return _rank_name(_rank_for_level(level))
 
 
-def next_title(level: int) -> tuple[int, str] | None:
-    for start, t in TITLES:
-        if start > level:
-            return start, t
-    return None
+def next_title(level: int) -> tuple[int, str]:
+    rank = _rank_for_level(level) + 1
+    return _rank_start(rank), _rank_name(rank)
 
 
 @dataclass
@@ -125,8 +150,8 @@ def summary(db, idx: Index, user_id: str) -> dict:
         "title": title_for(level),
         "xp": xp,
         "levelStartXp": start,
-        "nextLevelXp": end if level < MAX_LEVEL else None,
-        "progress": 1.0 if level >= MAX_LEVEL else round((xp - start) / (end - start), 4),
-        "nextTitle": {"level": nxt[0], "title": nxt[1]} if nxt else None,
+        "nextLevelXp": end,
+        "progress": round((xp - start) / (end - start), 4),
+        "nextTitle": {"level": nxt[0], "title": nxt[1]},
         "breakdown": breakdown,
     }

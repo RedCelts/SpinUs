@@ -520,17 +520,28 @@ async def test_friend_connections(client):
 
 
 def test_level_curve():
-    from spinus_server import levels
-    assert levels.level_for_xp(0) == 1 and levels.level_for_xp(59) == 1 and levels.level_for_xp(60) == 2
-    assert levels.level_for_xp(levels.xp_for_level(10)) == 10
-    assert levels.title_for(1) == "Newcomer" and levels.title_for(12) == "Crate Digger" and levels.title_for(60) == "Legend"
-    assert levels.next_title(12) == (15, "Tastemaker") and levels.next_title(55) is None
+    from spinus_server import levels as L
+    assert L.level_for_xp(0) == 1 and L.level_for_xp(59) == 1 and L.level_for_xp(60) == 2
+    for lv in (2, 10, 57, 250, 1000):
+        assert L.level_for_xp(L.xp_for_level(lv)) == lv and L.level_for_xp(L.xp_for_level(lv) - 1) == lv - 1
+    # Every level costs more than the one before; no ceiling.
+    costs = [L.xp_for_level(n + 1) - L.xp_for_level(n) for n in range(1, 300)]
+    assert all(b > a for a, b in zip(costs, costs[1:]))
+    assert L.level_for_xp(10**12) > 1000
+    # Titles: gaps between ranks keep growing, and names never run out.
+    starts = [L._rank_start(r) for r in range(20)]
+    assert starts[:8] == [1, 2, 4, 7, 11, 16, 22, 29]
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    assert all(b > a for a, b in zip(gaps, gaps[1:]))
+    assert L.title_for(1) == "Newcomer" and L.title_for(3) == "Listener" and L.title_for(10) == "Crate Digger"
+    assert L.title_for(79) == "Immortal" and L.title_for(92) == "Immortal II" and L.title_for(120) == "Immortal III"
+    assert L.next_title(10) == (11, "Tastemaker") and L.next_title(5000)[1].startswith("Immortal ")
 
 
 async def test_levels(client):
     h, me = await login(client)
     lv = await j(client, "/api/me/level", h)
-    assert lv["level"] == 1 and lv["xp"] == 30 and lv["title"] == "Newcomer" and lv["nextTitle"]["title"] == "Listener"
+    assert lv["level"] == 1 and lv["xp"] == 30 and lv["title"] == "Newcomer" and lv["nextTitle"] == {"level": 2, "title": "Listener"}
     tracks = (await j(client, "/api/tracks?sort=album", h))["items"]
     for t in tracks[:3]:  # 3 songs, one album, all "Worship"
         await j(client, f"/api/plays/{t['id']}", h, 204, "POST", {"datePlayed": "2026-11-20T10:00:00Z"})
@@ -541,6 +552,6 @@ async def test_levels(client):
     got = {b["key"]: b["count"] for b in lv["breakdown"]}
     assert got["songs"] == 3 and got["albums"] == 1 and got["artists"] == 1 and got["genres"] == 1
     assert got["days"] == 3 and got["likes"] == 1  # 2 play days + today and got["playlists"] == 1 and got["minutes"] == 0
-    # 3*10 + 25 + 15 + 40 + 3*30 + 5 + 50 = 255 XP -> level 3 (240..540)
-    assert lv["xp"] == 255 and lv["level"] == 3 and lv["title"] == "Listener" and 0 < lv["progress"] < 1
-    assert lv["levelStartXp"] == 240 and lv["nextLevelXp"] == 540
+    # 3*10 + 25 + 15 + 40 + 3*30 + 5 + 50 = 255 XP -> level 2 (60..276)
+    assert lv["xp"] == 255 and lv["level"] == 2 and lv["title"] == "Listener" and 0 < lv["progress"] < 1
+    assert lv["levelStartXp"] == 60 and lv["nextLevelXp"] == 276
