@@ -26,6 +26,25 @@ LRCLIB = "https://lrclib.net/api"
 RETRY_DAYS = 14
 # Deezer allows 50 requests / 5 s; stay well under it.
 REQUEST_GAP = 0.25
+# Network trouble: retry one item after these waits (seconds)...
+RETRY_WAITS = (3, 10, 30)
+# ...and after this many items in a row fail anyway, pause the pass.
+PAUSE_AFTER = 5
+PAUSE_SECONDS = 300
+MAX_PAUSES = 12  # an hour of trying; then the next scan starts it again
+
+
+class Transient(Exception):
+    """A lookup failed for a reason that may go away (timeout, 429, 5xx, quota)."""
+
+
+def transient(e: Exception) -> bool:
+    import socket
+    if isinstance(e, Transient):
+        return True
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code == 429 or e.code >= 500
+    return isinstance(e, (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError))
 
 
 def norm(text: str) -> str:
@@ -60,6 +79,7 @@ class ArtworkFetcher:
         self.last_run: dict = {}
         # Live progress while a pass runs (shown on the web page).
         self.progress: dict = {}
+        self.stop = False  # set on shutdown
         self._last_request = 0.0
 
     # ---- files
@@ -96,13 +116,19 @@ class ArtworkFetcher:
         body = self.get(f"{API}{path}?limit=10&q={urllib.parse.quote(query)}")
         data = json.loads(body)
         if "error" in data:
-            raise IOError(str(data["error"]))
+            # Deezer's "Quota limit exceeded" (code 4) means slow down.
+            err = data["error"]
+            if isinstance(err, dict) and err.get("code") in (4, 700):
+                raise Transient(str(err))
+            raise IOError(str(err))
         return data.get("data", [])
 
     def _save(self, kind: str, item_id: str, url: str) -> Path | None:
         try:
             data = self.get(url, timeout=20)
         except Exception as e:
+            if transient(e):
+                raise  # retried; never recorded as "not found"
             log.info("download failed for %s %s: %s", kind, item_id, e)
             return None
         if len(data) < 1000:
@@ -160,7 +186,7 @@ class ArtworkFetcher:
             params["duration"] = str(round(t.duration_ms / 1000))
         self._pace()
         try:
-            hit = json.loads(self.get(f"{LRCLIB}/get?{urllib.parse.urlencode(params)}"))
+            hit = json.loads(self.get(f"{LRCLIB}/get?{urllib.parse.urlencode(params)}", timeout=20))
         except urllib.error.HTTPError as e:
             if e.code != 404:
                 raise
@@ -170,7 +196,7 @@ class ArtworkFetcher:
             # same-artist, same-title result within 5 s of our length.
             self._pace()
             q = urllib.parse.urlencode({"artist_name": artist, "track_name": t.title})
-            results = json.loads(self.get(f"{LRCLIB}/search?{q}")) or []
+            results = json.loads(self.get(f"{LRCLIB}/search?{q}", timeout=20)) or []
             want_a, want_t = norm(artist), norm(t.title)
             hit = None
             for r in results:
@@ -201,6 +227,22 @@ class ArtworkFetcher:
         self._last_request = time.time()
 
     # ---- the pass
+
+    def _lookup(self, kind: str, item) -> Path | None:
+        if kind == "lyrics":
+            text = self.find_lyrics(item)
+            return self._save_text(kind, item.id, text) if text else None
+        finder = {"album": self.find_album, "artist": self.find_artist, "track": self.find_track}[kind]
+        url = finder(item)
+        return self._save(kind, item.id, url) if url else None
+
+    def _wait(self, seconds: float, why: str):
+        """Sleep (showing a "paused" note on the progress bar), waking early on shutdown."""
+        until = time.time() + seconds
+        self.progress["paused"] = {"reason": why, "until": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(until))}
+        while not self.stop and time.time() < until:
+            time.sleep(min(1.0, until - time.time()))
+        self.progress.pop("paused", None)
 
     def todo(self) -> list[tuple[str, object]]:
         idx = self.library.index
@@ -237,28 +279,40 @@ class ArtworkFetcher:
             kinds = {k: sum(1 for kk, _ in jobs if kk == k) for k in ("album", "artist", "track", "lyrics")}
             self.progress = {"done": 0, "total": len(jobs), "found": 0, "current": None,
                              "byKind": {k: {"done": 0, "total": n} for k, n in kinds.items() if n}}
+            in_a_row = pauses = 0
             for kind, item in jobs:
+                if self.stop:
+                    break
                 name = getattr(item, "name", None) or getattr(item, "title", "")
                 self.progress["current"] = {"kind": kind, "name": name}
-                try:
-                    if kind == "lyrics":
-                        text = self.find_lyrics(item)
-                        p = self._save_text(kind, item.id, text) if text else None
-                    else:
-                        finder = {"album": self.find_album, "artist": self.find_artist, "track": self.find_track}[kind]
-                        url = finder(item)
-                        p = self._save(kind, item.id, url) if url else None
-                except Exception as e:
-                    # Offline / rate-limited: stop and try again next pass.
-                    log.info("%s lookup failed (%s); will retry later", kind, e)
-                    failed += 1
-                    self.progress["done"] += 1
-                    self.progress["byKind"][kind]["done"] += 1
-                    if failed >= 10:
+                p, error = None, None
+                for attempt in range(len(RETRY_WAITS) + 1):
+                    try:
+                        p = self._lookup(kind, item)
+                        error = None
                         break
-                    continue
+                    except Exception as e:
+                        error = e
+                        if not transient(e) or attempt == len(RETRY_WAITS):
+                            break
+                        self._wait(RETRY_WAITS[attempt], f"{type(e).__name__}: retrying")
                 self.progress["done"] += 1
                 self.progress["byKind"][kind]["done"] += 1
+                if error is not None:
+                    failed += 1
+                    self.progress["errors"] = failed
+                    log.info("%s lookup failed for %s (%s); will retry next pass", kind, name, error)
+                    if transient(error):
+                        in_a_row += 1
+                        if in_a_row >= PAUSE_AFTER:
+                            if pauses >= MAX_PAUSES:
+                                log.info("still can't reach the artwork / lyrics sites; stopping until the next scan")
+                                break
+                            pauses += 1
+                            self._wait(PAUSE_SECONDS, "can't reach Deezer / LRCLIB")
+                            in_a_row = 0
+                    continue  # not marked missing: tried again next pass
+                in_a_row = 0
                 if p:
                     self.progress["found"] += 1
                     if kind == "lyrics":

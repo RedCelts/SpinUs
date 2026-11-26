@@ -174,7 +174,13 @@ function showFetch(st) {
     const pct = Math.floor(100 * p.done / p.total);
     $("fetchBar").style.width = pct + "%";
     $("fetchPct").textContent = p.done + " / " + p.total + " · " + pct + "%";
-    $("fetchNow").textContent = p.current ? "Now: " + KIND_ONE[p.current.kind] + " for " + p.current.name + " · " + p.found + " found so far" : "";
+    if (p.paused) {
+      const at = new Date(p.paused.until).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+      $("fetchNow").textContent = "Paused (" + p.paused.reason + "), resuming at " + at + " · " + p.found + " found so far";
+    } else {
+      $("fetchNow").textContent = p.current ? "Now: " + KIND_ONE[p.current.kind] + " for " + p.current.name + " · " + p.found + " found so far" +
+        (p.errors ? " · " + p.errors + " to retry later" : "") : "";
+    }
     $("fetchKinds").textContent = Object.entries(p.byKind || {}).map(([k, v]) => KIND[k] + " " + v.done + "/" + v.total).join(" · ");
   }
   // Poll every 2 s while downloading; refresh the whole page once it ends.

@@ -224,6 +224,7 @@ class SpinUs:
             self._scan_task = asyncio.create_task(self._rescan_loop())
 
     async def _cleanup(self, app):
+        self.fetcher.stop = True
         if self._scan_task:
             self._scan_task.cancel()
         for s in self.presence.sessions.values():

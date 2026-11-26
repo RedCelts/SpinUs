@@ -581,3 +581,43 @@ async def test_fetch_progress(aiohttp_client, music, tmp_path):
         await asyncio.sleep(0.05)
     st = await j(c, "/api/library/status", h)
     assert st["fetching"] is False and st["fetchProgress"] is None and st["lastFetch"]["notFound"] == p["total"]
+
+
+def test_fetch_rides_out_network_trouble(tmp_path):
+    """Timeouts / 429s are retried, and a run of failures pauses instead of stopping the pass."""
+    import urllib.error
+    import spinus_server.artwork as aw
+    from spinus_server.db import Database
+    from spinus_server.library import Index, Track, make_id
+
+    class Lib:
+        index = Index()
+    lib = Lib()
+    for n in range(12):
+        t = Track(id=make_id("track", str(n)), path=tmp_path / f"{n}.mp3", title=f"Song {n}", artists=["Band"],
+                  artist_ids=[], album=None, album_id=None, album_artist="Band", album_artist_id=None,
+                  duration_ms=1000, track=None, disc=None, genres=[], year=None, date=None, added="",
+                  direct=True, has_lyrics=False, image_tag="x")  # covers present: lyrics only
+        lib.index.tracks[t.id] = t
+    aw.REQUEST_GAP, aw.RETRY_WAITS, aw.PAUSE_SECONDS = 0, (0, 0, 0), 0
+    calls = {"n": 0}
+
+    def flaky_get(url, timeout=10):
+        calls["n"] += 1
+        # First 25 requests: the site is down (enough for a pause); then fine.
+        if calls["n"] <= 25:
+            raise urllib.error.URLError("timed out")
+        if "Song+9" in url and "/get" in url:
+            return json.dumps({"syncedLyrics": "[00:01.00]hey"}).encode()
+        if "/get" in url:
+            raise urllib.error.HTTPError(url, 404, "nope", None, None)
+        return b"[]"
+
+    f = aw.ArtworkFetcher(lib, tmp_path / "fetched", http_get=flaky_get, artwork=False)
+    res = f.run()
+    # Every song was still tried (no early stop); the outage ones aren't marked missing.
+    assert res["found"] == 1 and res["errors"] > 0 and res["found"] + res["notFound"] + res["errors"] == 12
+    misses = list((tmp_path / "fetched").glob("lyrics-*.none"))
+    assert len(misses) == res["notFound"]
+    # Next pass retries exactly the failed ones.
+    assert len(f.todo()) == res["errors"]
