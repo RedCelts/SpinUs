@@ -1,5 +1,11 @@
 package com.oniel.music.ui
 
+import kotlinx.coroutines.withContext
+
+import kotlinx.coroutines.Dispatchers
+
+import androidx.compose.runtime.produceState
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -96,20 +102,20 @@ fun LibraryScreen(
             }
             launch {
                 if (artistPics.isEmpty()) {
-                    artistPics = HomeDiskCache.loadArtistPictures(context)
+                    artistPics = withContext(Dispatchers.IO) { HomeDiskCache.loadArtistPictures(context) }
                 }
                 if (!LibraryCache.picturesFresh()) {
                     try {
                         val fresh = client.getArtistPictures()
                         artistPics = fresh
                         LibraryCache.storePictures(fresh)
-                        HomeDiskCache.saveArtistPictures(context, fresh)
+                        withContext(Dispatchers.IO) { HomeDiskCache.saveArtistPictures(context, fresh) }
                     } catch (e: Exception) { }
                 }
             }
             // Nothing in memory: the copy saved on the phone, if any.
             if (LibraryCache.best() == null) {
-                HomeDiskCache.load(context)?.let { d ->
+                withContext(Dispatchers.IO) { HomeDiskCache.load(context) }?.let { d ->
                     if (HomeCache.data == null) HomeCache.restore(d)
                     albums = d.libraryAlbums
                     tracks = d.allTracks
@@ -134,16 +140,21 @@ fun LibraryScreen(
 
     // Singles only: songs with no album, or from a release of 1-3 tracks
     // (a single, maybe with a remix) - not songs from full albums.
-    val singles = remember(tracks) {
-        // Release size = how many of its songs are in the library.
-        val albumSize = tracks.groupingBy { it.albumId }.eachCount()
-        tracks.filter { t ->
-            val id = t.albumId
-            id == null || (albumSize[id] ?: 0) <= 3
+    // Worked out in the background (thousands of songs): the screen never waits.
+    val singles by produceState(initialValue = emptyList<Track>(), tracks) {
+        value = withContext(Dispatchers.Default) {
+            // Release size = how many of its songs are in the library.
+            val albumSize = tracks.groupingBy { it.albumId }.eachCount()
+            tracks.filter { t ->
+                val id = t.albumId
+                id == null || (albumSize[id] ?: 0) <= 3
+            }
         }
     }
-    val liked = remember(tracks) {
-        tracks.filter { client.favoriteOverride(it.id) ?: it.isFavorite }
+    val liked by produceState(initialValue = emptyList<Track>(), tracks) {
+        value = withContext(Dispatchers.Default) {
+            tracks.filter { client.favoriteOverride(it.id) ?: it.isFavorite }
+        }
     }
 
     Column(
@@ -261,17 +272,19 @@ private fun ArtistsSection(
     client: SpinUsClient,
     onArtistClick: (String) -> Unit
 ) {
-    val artists = remember(tracks) {
-        // Album artists only: featured / guest artists on single tracks
-        // don't get their own entry.
-        tracks
-            .map { it.albumArtist.ifBlank { it.artists.firstOrNull().orEmpty() } }
-            .filter { it.isNotBlank() }
-            .groupingBy { it }
-            .eachCount()
-            .entries
-            .sortedByDescending { it.value }
-            .map { it.key }
+    val artists by produceState(initialValue = emptyList<String>(), tracks) {
+        value = withContext(Dispatchers.Default) {
+            // Album artists only: featured / guest artists on single tracks
+            // don't get their own entry.
+            tracks
+                .map { it.albumArtist.ifBlank { it.artists.firstOrNull().orEmpty() } }
+                .filter { it.isNotBlank() }
+                .groupingBy { it }
+                .eachCount()
+                .entries
+                .sortedByDescending { it.value }
+                .map { it.key }
+        }
     }
     LazyColumn(contentPadding = PaddingValues(bottom = bottomChromePadding())) {
         items(artists, key = { it }) { artist ->

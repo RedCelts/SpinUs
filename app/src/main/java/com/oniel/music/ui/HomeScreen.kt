@@ -116,7 +116,7 @@ fun HomeScreen(
     LaunchedEffect(Unit) {
         // Fresh app start: show last session's Home from the phone at once.
         if (cached == null) {
-            HomeDiskCache.load(context)?.let { d ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { HomeDiskCache.load(context) }?.let { d ->
                 if (HomeCache.data == null) HomeCache.restore(d)
                 tiles = d.tiles
                 newReleases = d.newReleases

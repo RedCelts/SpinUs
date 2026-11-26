@@ -736,17 +736,24 @@ class SpinUsClient(
 
     private fun JSONObject.json() = toString().toRequestBody(JSON_MEDIA_TYPE)
 
+    /** Parsed off the main thread: the full song list is several MB of JSON. */
     private suspend fun getJson(path: String, what: String): JSONObject {
         val body = executeRaw(authedRequest(path).get().build(), what)
             ?: throw IOException("$what failed: not found")
-        return JSONObject(body)
+        return withContext(Dispatchers.Default) { JSONObject(body) }
     }
 
     private suspend fun items(path: String, what: String): JSONArray =
         getJson(path, what).optJSONArray("items") ?: JSONArray()
 
-    private suspend fun albums(path: String) = items(path, "library").toAlbumList()
-    private suspend fun tracks(path: String) = items(path, "library").toTrackList()
+    private suspend fun albums(path: String): List<Album> {
+        val arr = items(path, "library")
+        return withContext(Dispatchers.Default) { arr.toAlbumList() }
+    }
+    private suspend fun tracks(path: String): List<Track> {
+        val arr = items(path, "library")
+        return withContext(Dispatchers.Default) { arr.toTrackList() }
+    }
     private suspend fun playlists(path: String): List<Playlist> {
         val arr = items(path, "playlists")
         return (0 until arr.length()).map { i ->

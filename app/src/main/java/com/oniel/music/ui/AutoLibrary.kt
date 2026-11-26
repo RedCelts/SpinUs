@@ -79,7 +79,7 @@ class AutoLibrary(private val context: Context) {
             }
         }
         if (tracks.isEmpty()) {
-            HomeDiskCache.load(context)?.let { d ->
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { HomeDiskCache.load(context) }?.let { d ->
                 tracks = d.allTracks
                 albums = d.libraryAlbums
             }
@@ -139,7 +139,9 @@ class AutoLibrary(private val context: Context) {
             )
             parentId == ARTISTS -> {
                 ensureLibrary()
-                val pics = LibraryCache.artistPictures.ifEmpty { HomeDiskCache.loadArtistPictures(context) }
+                val pics = LibraryCache.artistPictures.ifEmpty {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { HomeDiskCache.loadArtistPictures(context) }
+                }
                 artistNames().map { name ->
                     val pic = pics[name.lowercase()]
                     folder("artist:$name", name, grid = true,
@@ -174,7 +176,9 @@ class AutoLibrary(private val context: Context) {
             out += playableList("mix:${mix.id}", mix.title, mix.subtitle,
                 artUrl = mix.tracks.firstOrNull()?.let { c.trackArtUrl(it, 300) }, group = "Made for you")
         }
-        val pics = LibraryCache.artistPictures.ifEmpty { HomeDiskCache.loadArtistPictures(context) }
+        val pics = LibraryCache.artistPictures.ifEmpty {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { HomeDiskCache.loadArtistPictures(context) }
+                }
         stationNames().forEach { name ->
             val pic = pics[name.lowercase()]
             out += playableList("station:$name", "$name radio", "Station",
