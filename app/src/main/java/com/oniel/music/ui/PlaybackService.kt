@@ -567,6 +567,15 @@ class PlaybackService : MediaLibraryService() {
 
     /** Fetch the next [MediaCache.PRELOAD_COUNT] songs of the queue in the background. */
     private fun preloadUpcoming() {
+        // Pre-loading is an extra: it must never take playback down.
+        try {
+            preloadUpcomingUnsafe()
+        } catch (e: Exception) {
+            // Ignore; the song still streams normally.
+        }
+    }
+
+    private fun preloadUpcomingUnsafe() {
         val p = player ?: return
         val generation = ++preloadGeneration
         preloadWriter?.cancel()
@@ -576,12 +585,15 @@ class PlaybackService : MediaLibraryService() {
         val timeline = p.currentTimeline
         if (timeline.isEmpty) return
         val uris = ArrayList<android.net.Uri>()
+        val repeatMode = if (p.repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else p.repeatMode
         var index = p.currentMediaItemIndex
-        repeat(com.oniel.music.net.MediaCache.PRELOAD_COUNT) {
-            index = timeline.getNextWindowIndex(index, p.repeatMode.let {
-                if (it == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else it
-            }, p.shuffleModeEnabled)
-            if (index == C.INDEX_UNSET) return@repeat
+        for (step in 0 until com.oniel.music.net.MediaCache.PRELOAD_COUNT) {
+            if (index == C.INDEX_UNSET || index !in 0 until timeline.windowCount) break
+            index = timeline.getNextWindowIndex(index, repeatMode, p.shuffleModeEnabled)
+            // End of the queue (or looped back to the current song): stop.
+            if (index == C.INDEX_UNSET || index == p.currentMediaItemIndex ||
+                index !in 0 until p.mediaItemCount
+            ) break
             p.getMediaItemAt(index).localConfiguration?.uri?.let { uris += it }
         }
         if (uris.isEmpty()) return
