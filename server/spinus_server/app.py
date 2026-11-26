@@ -36,6 +36,14 @@ MIME = {
 PUBLIC = {"/", "/api/info", "/api/auth/login", "/favicon.ico"}
 
 
+def _compact(obj) -> str:
+    return json.dumps(obj, separators=(",", ":"), ensure_ascii=False)
+
+
+def json_response(data, status: int = 200, **kw) -> web.Response:
+    return web.json_response(data, status=status, dumps=_compact, **kw)
+
+
 @dataclass
 class Config:
     music: Path
@@ -102,6 +110,11 @@ class Presence:
 
 # ---------------------------------------------------------------- app
 
+def _drop_empty(d: dict) -> dict:
+    """Leave out null / empty fields: smaller lists, and the app treats missing as empty."""
+    return {k: v for k, v in d.items() if (v is not None and v != []) or k == "albumId"}
+
+
 class SpinUs:
     def __init__(self, config: Config):
         self.config = config
@@ -119,7 +132,8 @@ class SpinUs:
     # ---- lifecycle
 
     def make_app(self) -> web.Application:
-        app = web.Application(middlewares=[self.auth_middleware], client_max_size=8 * 1024 * 1024)
+        app = web.Application(middlewares=[self.gzip_middleware, self.auth_middleware],
+                              client_max_size=8 * 1024 * 1024)
         r = app.router
         r.add_get("/", self.admin_page)
         r.add_get("/api/info", self.info)
@@ -206,6 +220,16 @@ class SpinUs:
     # ---- auth
 
     @web.middleware
+    async def gzip_middleware(self, request: web.Request, handler):
+        """Compress JSON (the song list shrinks ~10x): what makes lists fast over Tailscale."""
+        resp = await handler(request)
+        if (isinstance(resp, web.Response) and not isinstance(resp, web.FileResponse)
+                and resp.content_type == "application/json" and resp.body is not None
+                and len(resp.body) > 1024 and "gzip" in request.headers.get("Accept-Encoding", "")):
+            resp.enable_compression(web.ContentCoding.gzip)
+        return resp
+
+    @web.middleware
     async def auth_middleware(self, request: web.Request, handler):
         if request.path in PUBLIC or request.method == "OPTIONS":
             return await handler(request)
@@ -216,7 +240,7 @@ class SpinUs:
         token = token or request.query.get("token")
         info = self.db.token_info(token) if token else None
         if info is None:
-            return web.json_response({"error": "not signed in"}, status=401)
+            return json_response({"error": "not signed in"}, status=401)
         request["auth"] = info
         request["token"] = token
         return await handler(request)
@@ -231,7 +255,7 @@ class SpinUs:
             raise web.HTTPForbidden(text=json.dumps({"error": "admin only"}), content_type="application/json")
 
     async def info(self, request):
-        return web.json_response({
+        return json_response({
             "server": "SpinUs", "version": __version__, "needsSetup": self.db.user_count() == 0,
         })
 
@@ -240,7 +264,7 @@ class SpinUs:
         name = str(body.get("username", "")).strip()
         password = str(body.get("password", ""))
         if not name or not password:
-            return web.json_response({"error": "username and password are required"}, status=400)
+            return json_response({"error": "username and password are required"}, status=400)
         loop = asyncio.get_running_loop()
         user = None
         if self.db.user_count() == 0:
@@ -251,11 +275,11 @@ class SpinUs:
             user = await loop.run_in_executor(None, self.db.check_login, name, password)
         if user is None:
             await asyncio.sleep(0.5)
-            return web.json_response({"error": "wrong username or password"}, status=401)
+            return json_response({"error": "wrong username or password"}, status=401)
         token, session_id = self.db.issue_token(
             user["id"], str(body.get("deviceId") or "unknown"), str(body.get("deviceName") or ""),
             str(body.get("client") or ""), str(body.get("version") or ""))
-        return web.json_response({"token": token, "sessionId": session_id, "user": user})
+        return json_response({"token": token, "sessionId": session_id, "user": user})
 
     async def logout(self, request):
         self.db.revoke_token(request["token"])
@@ -263,19 +287,19 @@ class SpinUs:
 
     async def me(self, request):
         a = request["auth"]
-        return web.json_response({"id": a["user_id"], "name": a["user_name"], "isAdmin": bool(a["is_admin"]),
+        return json_response({"id": a["user_id"], "name": a["user_name"], "isAdmin": bool(a["is_admin"]),
                                   "sessionId": a["session_id"]})
 
     async def change_password(self, request):
         body = await request.json()
         if not body.get("password"):
-            return web.json_response({"error": "password required"}, status=400)
+            return json_response({"error": "password required"}, status=400)
         self.db.set_password(request["auth"]["user_name"], body["password"])
         return web.Response(status=204)
 
     async def users(self, request):
         self.require_admin(request)
-        return web.json_response({"items": self.db.list_users()})
+        return json_response({"items": self.db.list_users()})
 
     async def add_user(self, request):
         self.require_admin(request)
@@ -284,26 +308,26 @@ class SpinUs:
             user = self.db.create_user(str(body.get("name", "")), str(body.get("password", "")),
                                        bool(body.get("isAdmin", False)))
         except ValueError as e:
-            return web.json_response({"error": str(e)}, status=400)
-        return web.json_response(user, status=201)
+            return json_response({"error": str(e)}, status=400)
+        return json_response(user, status=201)
 
     async def remove_user(self, request):
         self.require_admin(request)
         name = request.match_info["name"]
         if name.casefold() == request["auth"]["user_name"].casefold():
-            return web.json_response({"error": "you can't delete your own account"}, status=400)
+            return json_response({"error": "you can't delete your own account"}, status=400)
         if not self.db.delete_user(name):
             raise web.HTTPNotFound()
         return web.Response(status=204)
 
     async def library_status(self, request):
-        return web.json_response({"scanning": self.library.scanning, "lastScan": self.library.last_scan,
+        return json_response({"scanning": self.library.scanning, "lastScan": self.library.last_scan,
                                   "fetching": self.fetcher.running, "lastFetch": self.fetcher.last_run,
                                   "musicFolder": str(self.config.music)})
 
     async def library_scan(self, request):
         self.require_admin(request)
-        return web.json_response(await self.scan())
+        return json_response(await self.scan())
 
     # ---- user data helpers
 
@@ -321,7 +345,7 @@ class SpinUs:
         idx = self.library.index
         pc, last = plays.get(t.id, (0, None))
         alb = idx.albums.get(t.album_id) if t.album_id else None
-        return {
+        return _drop_empty({
             "id": t.id, "title": t.title, "artists": t.artists, "artistIds": t.artist_ids,
             "album": t.album or "", "albumId": t.album_id, "albumArtist": t.album_artist,
             "albumArtistId": t.album_artist_id, "durationMs": t.duration_ms,
@@ -329,7 +353,7 @@ class SpinUs:
             "genres": t.genres, "year": t.year, "date": t.date, "dateAdded": t.added,
             "hasLyrics": t.has_lyrics,
             "userData": {"playCount": pc, "lastPlayed": last, "isFavorite": t.id in favs},
-        }
+        })
 
     def album_json(self, request, a) -> dict:
         favs, plays = self.user_data(request)
@@ -403,7 +427,7 @@ class SpinUs:
             out.sort(key=lambda a: fold(a["name"]), reverse=desc)
         if (n := self.limit(request)) is not None:
             out = out[:n]
-        return web.json_response({"items": out, "total": len(out)})
+        return json_response({"items": out, "total": len(out)})
 
     async def tracks(self, request):
         idx = self.library.index
@@ -451,7 +475,7 @@ class SpinUs:
             random.shuffle(items)
         if (n := self.limit(request)) is not None:
             items = items[:n]
-        return web.json_response({"items": [self.track_json(request, t) for t in items], "total": len(items)})
+        return json_response({"items": [self.track_json(request, t) for t in items], "total": len(items)})
 
     async def artists(self, request):
         idx = self.library.index
@@ -466,19 +490,19 @@ class SpinUs:
             out = [a for a in out if a["imageTag"]]
         if (n := self.limit(request)) is not None:
             out = out[:n]
-        return web.json_response({"items": out, "total": len(out)})
+        return json_response({"items": out, "total": len(out)})
 
     async def artist_by_name(self, request):
         idx = self.library.index
         aid = idx.artist_by_name.get(fold(request.query.get("name", "")))
         if not aid:
             raise web.HTTPNotFound()
-        return web.json_response(self.details_json(request, aid))
+        return json_response(self.details_json(request, aid))
 
     async def genres(self, request):
         idx = self.library.index
         items = sorted(idx.genres.values(), key=lambda g: fold(g.name))
-        return web.json_response({"items": [
+        return json_response({"items": [
             {"id": g.id, "name": g.name, "imageTag": None, "trackCount": len(g.track_ids),
              "albumCount": len(g.album_ids)} for g in items]})
 
@@ -525,7 +549,7 @@ class SpinUs:
         d = self.details_json(request, request.match_info["id"])
         if d is None:
             raise web.HTTPNotFound()
-        return web.json_response(d)
+        return json_response(d)
 
     async def similar_albums(self, request):
         idx = self.library.index
@@ -549,7 +573,7 @@ class SpinUs:
                 scored.append((score + random.random() * 0.25, other))
         scored.sort(key=lambda x: -x[0])
         n = self.limit(request, 8)
-        return web.json_response({"items": [self.album_json(request, a) for _, a in scored[:n]]})
+        return json_response({"items": [self.album_json(request, a) for _, a in scored[:n]]})
 
     async def instant_mix(self, request):
         idx = self.library.index
@@ -595,7 +619,7 @@ class SpinUs:
             out.append(t)
         head, rest = (out[:1], out[1:]) if len(seed) == 1 else ([], out)
         random.shuffle(rest)
-        return web.json_response({"items": [self.track_json(request, t) for t in head + rest]})
+        return json_response({"items": [self.track_json(request, t) for t in head + rest]})
 
     # ---- favorites / plays
 
@@ -642,22 +666,22 @@ class SpinUs:
             rows = [r for r in rows if term in fold(r["name"])]
         if (n := self.limit(request)) is not None:
             rows = rows[:n]
-        return web.json_response({"items": [{"id": r["id"], "name": r["name"], "trackCount": r["n"]} for r in rows]})
+        return json_response({"items": [{"id": r["id"], "name": r["name"], "trackCount": r["n"]} for r in rows]})
 
     async def create_playlist(self, request):
         body = await request.json()
         name = str(body.get("name", "")).strip()
         if not name:
-            return web.json_response({"error": "name required"}, status=400)
+            return json_response({"error": "name required"}, status=400)
         ids = [t for t in body.get("trackIds", []) if t in self.library.index.tracks]
         pid = self.db.create_playlist(self.uid(request), name, ids)
-        return web.json_response({"id": pid}, status=201)
+        return json_response({"id": pid}, status=201)
 
     async def playlist_tracks(self, request):
         pid = self.own_playlist(request)
         idx = self.library.index
         items = [idx.tracks[t] for t in self.db.playlist_tracks(pid) if t in idx.tracks]
-        return web.json_response({"items": [self.track_json(request, t) for t in items]})
+        return json_response({"items": [self.track_json(request, t) for t in items]})
 
     async def add_playlist_tracks(self, request):
         pid = self.own_playlist(request)
@@ -688,16 +712,16 @@ class SpinUs:
         lines = await asyncio.get_running_loop().run_in_executor(None, self.library.lyrics_for, t)
         if not lines:
             raise web.HTTPNotFound()
-        return web.json_response({"synced": "startMs" in lines[0], "lines": lines})
+        return json_response({"synced": "startMs" in lines[0], "lines": lines})
 
     async def get_pref(self, request):
         value = self.db.get_pref(self.uid(request), request.match_info["key"])
-        return web.json_response(value if value is not None else {})
+        return json_response(value if value is not None else {})
 
     async def put_pref(self, request):
         body = await request.json()
         if not isinstance(body, dict):
-            return web.json_response({"error": "expected a JSON object"}, status=400)
+            return json_response({"error": "expected a JSON object"}, status=400)
         self.db.put_pref(self.uid(request), request.match_info["key"], body)
         return web.Response(status=204)
 
@@ -712,7 +736,7 @@ class SpinUs:
             mime = MIME.get(t.path.suffix.lower()) or mimetypes.guess_type(t.path.name)[0] or "application/octet-stream"
             return web.FileResponse(t.path, headers={"Content-Type": mime, "Cache-Control": "private, max-age=86400"})
         if not self.config.ffmpeg:
-            return web.json_response({"error": "this file needs ffmpeg to play, and ffmpeg isn't installed"}, status=415)
+            return json_response({"error": "this file needs ffmpeg to play, and ffmpeg isn't installed"}, status=415)
         try:
             kbps = max(64, min(320, int(request.query.get("bitrate", "320"))))
         except ValueError:
@@ -830,7 +854,7 @@ class SpinUs:
         return ws
 
     async def own_session(self, request):
-        return web.json_response({"sessionId": request["auth"]["session_id"]})
+        return json_response({"sessionId": request["auth"]["session_id"]})
 
     async def report_playing(self, request):
         body = await request.json()
@@ -877,7 +901,7 @@ class SpinUs:
                                "albumId": t.album_id, "imageTag": alb.image_tag if alb else None,
                                "durationMs": t.duration_ms},
             })
-        return web.json_response({"items": out})
+        return json_response({"items": out})
 
     async def message(self, request):
         body = await request.json()

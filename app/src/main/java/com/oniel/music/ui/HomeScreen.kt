@@ -125,13 +125,15 @@ fun HomeScreen(
         if (cached != null && !HomeCache.isStale()) return@LaunchedEffect
         try {
             val nowMs = System.currentTimeMillis()
-            // The four library reads at the same time, not one after another.
+            // The library reads at the same time, not one after another.
+            // Albums already carry their tracks' play data, so one album
+            // list serves both uses (it used to be downloaded twice).
             val (albums, albumsWithPlays, tracks, added) = coroutineScope {
                 val a = async { client.getAlbums() }
-                val p = async { client.getAlbumsWithTrackPlayData() }
                 val t = async { client.getTracks() }
                 val n = async { client.getRecentlyAddedAlbums(30) }
-                HomeLoad(a.await(), p.await(), t.await(), n.await())
+                val all = a.await()
+                HomeLoad(all, all, t.await(), n.await())
             }
             tiles = Scoring.scoreTiles(tracks, nowMs)
             newReleases = Scoring.newReleases(albums, nowMs)
