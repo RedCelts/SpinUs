@@ -30,8 +30,8 @@ REQUEST_GAP = 0.25
 RETRY_WAITS = (3, 10, 30)
 # ...and after this many items in a row fail anyway, pause the pass.
 PAUSE_AFTER = 5
-PAUSE_SECONDS = 300
-MAX_PAUSES = 12  # an hour of trying; then the next scan starts it again
+PAUSE_SECONDS = 30
+MAX_PAUSES = 120  # an hour of trying; then the next scan starts it again
 
 
 class Transient(Exception):
