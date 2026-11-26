@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -250,7 +252,12 @@ fun PlayerScreen(
         modifier = Modifier
             .fillMaxSize()
             .nestedScroll(dismissScroll),
-        contentPadding = PaddingValues(bottom = bottomChromePadding())
+        // No tab bar on the player: clear the system navigation bar instead.
+        contentPadding = PaddingValues(
+            bottom = bottomChromePadding() +
+                androidx.compose.foundation.layout.WindowInsets.navigationBars
+                    .asPaddingValues().calculateBottomPadding()
+        )
     ) {
         item {
             // Top area: drag handle + cover. Dragging down here moves the

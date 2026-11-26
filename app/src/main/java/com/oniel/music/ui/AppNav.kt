@@ -182,9 +182,9 @@ fun OnielMusicApp() {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    // The tab bar stays on every screen, the full player included; the
-    // mini player hides only while the full player is open.
-    val showMiniPlayer = player.currentTrack != null && currentRoute != Routes.PLAYER
+    // The full player takes the whole screen: no tab bar, no mini player.
+    val onPlayer = currentRoute == Routes.PLAYER
+    val showMiniPlayer = player.currentTrack != null && !onPlayer
 
     var showFriends by remember { mutableStateOf(false) }
     val openArtist: (String?, String) -> Unit = { id, name ->
@@ -208,7 +208,7 @@ fun OnielMusicApp() {
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = pageBackground,
             bottomBar = {
-                Box {
+                if (!onPlayer) Box {
                 // Frosted from halfway down, fading to fully see-through at the top.
                 FadingGlass(
                     state = hazeState,

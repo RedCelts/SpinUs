@@ -262,8 +262,10 @@ private fun ArtistsSection(
     onArtistClick: (String) -> Unit
 ) {
     val artists = remember(tracks) {
+        // Album artists only: featured / guest artists on single tracks
+        // don't get their own entry.
         tracks
-            .flatMap { it.artists.ifEmpty { listOf(it.albumArtist) } }
+            .map { it.albumArtist.ifBlank { it.artists.firstOrNull().orEmpty() } }
             .filter { it.isNotBlank() }
             .groupingBy { it }
             .eachCount()
