@@ -542,10 +542,23 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         }
     }
 
+    /**
+     * One sync, retried quietly (5 s, 15 s, 45 s) on network errors before
+     * an error is shown: right after start-up the connection (especially
+     * built-in Tailscale) may not be ready yet.
+     */
     private suspend fun syncHistory() {
-        val c = client ?: return
-        if (!c.isLoggedIn) return
-        historyMutex.withLock {
+        for (wait in longArrayOf(5_000, 15_000, 45_000)) {
+            if (syncHistoryOnce(showError = false)) return
+            delay(wait)
+        }
+        syncHistoryOnce(showError = true)
+    }
+
+    private suspend fun syncHistoryOnce(showError: Boolean): Boolean {
+        val c = client ?: return true
+        if (!c.isLoggedIn) return true
+        return historyMutex.withLock {
             historySyncing = true
             try {
                 val added = withContext(Dispatchers.IO) {
@@ -567,9 +580,16 @@ class PlayerController(application: Application) : AndroidViewModel(application)
                 if (added > 0) historyVersion++
                 historySyncedAtMs = System.currentTimeMillis()
                 historySyncError = null
+                return true
             } catch (e: Exception) {
                 // The phone's copy is untouched; the next sync retries.
-                historySyncError = e.message ?: e.javaClass.simpleName
+                if (showError) {
+                    val msg = e.message ?: e.javaClass.simpleName
+                    historySyncError = if ("SOCKS" in msg || e is java.net.ConnectException ||
+                        e is java.net.SocketTimeoutException || e is java.net.UnknownHostException
+                    ) "couldn’t reach the server" else msg
+                }
+                return false
             } finally {
                 historySyncing = false
             }

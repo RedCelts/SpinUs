@@ -37,7 +37,11 @@ object TailnetProxySelector : ProxySelector() {
         val host = uri?.host
         val port = Tailscale.socksPort
         if (host != null && port > 0 && Tailscale.isRunning && isTailnetHost(host)) {
-            return listOf(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port)))
+            // Built-in Tailscale first; if its proxy can't connect (still
+            // starting up, peer not reachable yet: "SOCKS server general
+            // failure"), OkHttp falls back to a direct connection, which
+            // works when the Tailscale app's VPN is on or on the home network.
+            return listOf(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port)), Proxy.NO_PROXY)
         }
         return listOf(Proxy.NO_PROXY)
     }
