@@ -67,7 +67,7 @@ def music(tmp_path_factory) -> Path:
 
 @pytest.fixture
 async def client(aiohttp_client, music, tmp_path):
-    server = SpinUs(Config(music=music, data=tmp_path / "data", rescan_minutes=0, artist_photos=False, ffmpeg=FFMPEG))
+    server = SpinUs(Config(music=music, data=tmp_path / "data", rescan_minutes=0, fetch_artwork=False, fetch_lyrics=False, ffmpeg=FFMPEG))
     c = await aiohttp_client(server.make_app())
     c.server_obj = server
     return c
@@ -299,3 +299,81 @@ async def test_rescan_keeps_ids_and_dates(client, music):
 async def test_admin_page(client):
     r = await client.get("/")
     assert r.status == 200 and "SpinUs server" in await r.text()
+
+
+async def test_fetch_missing_artwork_and_lyrics(aiohttp_client, music, tmp_path):
+    import io as _io
+    import urllib.error
+    import urllib.parse as up
+    buf = _io.BytesIO()
+    Image.effect_noise((640, 640), 60).convert("RGB").save(buf, "JPEG")
+    jpeg = buf.getvalue()
+    calls = []
+
+    def fake_get(url, timeout=10):
+        calls.append(url)
+        q = up.unquote(url)
+        if url.startswith("https://img/"):
+            return jpeg
+        if "/search/album" in url:
+            if "Second Album" in q:
+                return json.dumps({"data": [
+                    {"title": "Second Album (Deluxe)", "artist": {"name": "Wrong Artist"}, "cover_xl": "https://img/wrong"},
+                    {"title": "Second Album (Deluxe Edition)", "artist": {"name": "Test Artist"}, "cover_xl": "https://img/second"},
+                ]}).encode()
+            return b'{"data": []}'
+        if "/search/artist" in url:
+            if "Other Band" in q:
+                return json.dumps({"data": [{"name": "Other Band", "picture_xl": "https://img/band"}]}).encode()
+            if "Guest" in q:  # Deezer placeholder = no photo
+                return json.dumps({"data": [{"name": "Guest", "picture_xl": "https://e-cdns/images/artist//1000x1000.jpg"}]}).encode()
+            return b'{"data": []}'
+        if "lrclib.net/api/get" in url:
+            if "No+Lyrics+Song" in url:
+                return json.dumps({"syncedLyrics": "[00:01.00]Found it", "plainLyrics": "Found it"}).encode()
+            raise urllib.error.HTTPError(url, 404, "nope", None, None)
+        if "lrclib.net/api/search" in url:
+            if "Alac+Song" in url:
+                return json.dumps([{"artistName": "Other Band", "trackName": "Alac Song", "duration": 2,
+                                    "plainLyrics": "Plain found"}]).encode()
+            return b"[]"
+        raise AssertionError("unexpected " + url)
+
+    server = SpinUs(Config(music=music, data=tmp_path / "data", rescan_minutes=0, ffmpeg=FFMPEG))
+    server.fetcher.get = fake_get
+    import spinus_server.artwork as aw
+    aw.REQUEST_GAP = 0
+    c = await aiohttp_client(server.make_app())
+    while server.fetcher.running or server._fetch_task is None or not server._fetch_task.done():
+        await asyncio.sleep(0.05)
+    h, body = await login(c)
+    tok = body["token"]
+    res = server.fetcher.last_run
+    assert res["errors"] == 0 and res["found"] == 4  # album, artist, 2 lyrics
+
+    albums = {a["name"]: a for a in (await j(c, "/api/albums", h))["items"]}
+    assert albums["Second Album"]["imageTag"]
+    r = await c.get(f"/api/images/{albums['Second Album']['id']}?w=100&token={tok}")
+    assert r.status == 200
+    assert albums["Lossless"]["imageTag"] is None  # no match -> left empty, retried later
+    artists = {a["name"]: a for a in (await j(c, "/api/artists", h))["items"]}
+    assert artists["Other Band"]["imageTag"] and artists["Guest"]["imageTag"] is None
+    assert artists["Test Artist"]["imageTag"]  # had its own folder.jpg: never looked up
+    assert not any("Test+Artist" in u and "/search/artist" in u for u in calls)
+    # The loose single has an embedded cover: not looked up either.
+    assert not any("/search/track" in u for u in calls)
+
+    tracks = {t["title"]: t for t in (await j(c, "/api/tracks", h))["items"]}
+    assert tracks["No Lyrics Song"]["hasLyrics"]
+    ly = await j(c, f"/api/lyrics/{tracks['No Lyrics Song']['id']}", h)
+    assert ly == {"synced": True, "lines": [{"text": "Found it", "startMs": 1000}]}
+    ly = await j(c, f"/api/lyrics/{tracks['Alac Song']['id']}", h)
+    assert ly["lines"] == [{"text": "Plain found"}]
+    # Songs with their own lyrics are never looked up.
+    assert not any("Synced+Song" in u for u in calls)
+
+    # A second pass skips everything (hits saved, misses remembered).
+    calls.clear()
+    assert server.fetcher.run()["found"] == 0 and calls == []
+    # The music folder is never written to.
+    assert not list(music.rglob("*.none")) and not (music / "fetched").exists()

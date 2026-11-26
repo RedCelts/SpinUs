@@ -10,7 +10,8 @@
 Settings come from environment variables: SPINUS_MUSIC (music folder,
 default /music), SPINUS_DATA (database + caches, default /data),
 SPINUS_PORT (default 8484), SPINUS_RESCAN_MINUTES (default 15, 0 = off),
-SPINUS_ARTIST_PHOTOS (default 1: fetch missing artist photos from Deezer).
+SPINUS_FETCH_ARTWORK (default 1: download missing covers / artist photos
+from Deezer), SPINUS_FETCH_LYRICS (default 1: download missing lyrics from LRCLIB).
 """
 import argparse
 import getpass

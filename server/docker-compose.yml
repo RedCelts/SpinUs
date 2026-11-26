@@ -16,7 +16,8 @@ services:
     environment:
       TZ: America/New_York
       SPINUS_RESCAN_MINUTES: "15"
-      SPINUS_ARTIST_PHOTOS: "1"
+      SPINUS_FETCH_ARTWORK: "1"
+      SPINUS_FETCH_LYRICS: "1"
 x-casaos:
   architectures: [amd64, arm64]
   main: spinus

@@ -108,7 +108,9 @@ async function load() {
   const s = st.lastScan || {};
   $("nTracks").textContent = s.tracks ?? "–"; $("nAlbums").textContent = s.albums ?? "–"; $("nArtists").textContent = s.artists ?? "–";
   $("scanInfo").textContent = (st.scanning ? "Scanning now… " : "") + "Music folder: " + st.musicFolder +
-    (s.finishedAt ? " · last scan " + new Date(s.finishedAt.replace(/\.(\d{3})\d*Z$/, ".$1Z")).toLocaleString() : "");
+    (s.finishedAt ? " · last scan " + new Date(s.finishedAt.replace(/\.(\d{3})\d*Z$/, ".$1Z")).toLocaleString() : "") +
+    (st.fetching ? " · downloading missing artwork and lyrics…"
+      : (st.lastFetch && st.lastFetch.found != null ? " · last download: " + st.lastFetch.found + " found, " + st.lastFetch.notFound + " not found" : ""));
   if (me.isAdmin) {
     const { items } = await api("/api/users");
     $("users").innerHTML = "";

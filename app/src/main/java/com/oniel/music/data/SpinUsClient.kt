@@ -548,7 +548,7 @@ class SpinUsClient(
         val albumId = track.albumId
         val artistId = track.artistId
         if (albumId != null && track.imageTag != null) return imageUrl(albumId, track.imageTag, width)
-        if (albumId == null) return imageUrl(track.id, null, width) // embedded cover, if any
+        if (albumId == null) return imageUrl(track.id, track.imageTag, width) // embedded or downloaded cover
         if (artistId != null) return imageUrl(artistId, null, width)
         return imageUrl(albumId, null, width)
     }

@@ -299,6 +299,7 @@ class Track:
     direct: bool
     has_lyrics: bool
     folded: str = ""
+    image_tag: str | None = None  # loose songs only: embedded or fetched cover
 
 
 @dataclass
@@ -389,9 +390,11 @@ def _iso(ts: float) -> str:
 
 
 class Library:
-    def __init__(self, root: Path, db):
+    def __init__(self, root: Path, db, fetched_dir: Path | None = None):
         self.root = Path(root)
         self.db = db
+        # Artwork / lyrics downloaded by artwork.ArtworkFetcher.
+        self.fetched_dir = fetched_dir
         self.index = Index()
         self._lock = threading.Lock()
         self.scanning = False
@@ -505,6 +508,8 @@ class Library:
                 has_lyrics=has_lyrics,
                 folded=" ".join(fold(x) for x in [m["title"], *artists, m["album"] or ""]),
             )
+            if album_id is None and m.get("embeddedArt"):
+                t.image_tag = file_tag(path)
             idx.tracks[tid] = t
             for a in artist_objs:
                 a.track_ids.append(tid)
@@ -586,4 +591,10 @@ class Library:
             lines = parse_lyrics(meta["lyrics"])
             if lines:
                 return lines
+        if self.fetched_dir is not None:
+            p = self.fetched_dir / f"lyrics-{track.id}.lrc"
+            if p.is_file():
+                lines = parse_lyrics(p.read_text("utf-8", errors="replace"))
+                if lines:
+                    return lines
         return None

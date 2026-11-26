@@ -16,8 +16,6 @@ import os
 import random
 import shutil
 import time
-import urllib.parse
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -25,6 +23,7 @@ from aiohttp import web, WSMsgType
 
 from . import __version__
 from .db import Database
+from .artwork import ArtworkFetcher
 from .library import Library, embedded_picture, file_tag, fold
 
 log = logging.getLogger("spinus")
@@ -43,7 +42,8 @@ class Config:
     data: Path
     port: int = 8484
     rescan_minutes: float = 15
-    artist_photos: bool = True
+    fetch_artwork: bool = True
+    fetch_lyrics: bool = True
     ffmpeg: str | None = None
 
     @classmethod
@@ -53,7 +53,9 @@ class Config:
             data=Path(os.environ.get("SPINUS_DATA", "/data")),
             port=int(os.environ.get("SPINUS_PORT", "8484")),
             rescan_minutes=float(os.environ.get("SPINUS_RESCAN_MINUTES", "15")),
-            artist_photos=os.environ.get("SPINUS_ARTIST_PHOTOS", "1") not in ("0", "false", "no"),
+            fetch_artwork=os.environ.get("SPINUS_FETCH_ARTWORK", os.environ.get("SPINUS_ARTIST_PHOTOS", "1"))
+            not in ("0", "false", "no"),
+            fetch_lyrics=os.environ.get("SPINUS_FETCH_LYRICS", "1") not in ("0", "false", "no"),
             ffmpeg=shutil.which("ffmpeg"),
         )
 
@@ -104,12 +106,15 @@ class SpinUs:
     def __init__(self, config: Config):
         self.config = config
         self.db = Database(config.data / "spinus.db")
-        self.library = Library(config.music, self.db)
+        self.fetched = config.data / "fetched"
+        self.library = Library(config.music, self.db, fetched_dir=self.fetched)
+        self.fetcher = ArtworkFetcher(self.library, self.fetched,
+                                      artwork=config.fetch_artwork, lyrics=config.fetch_lyrics)
         self.presence = Presence()
         self.cache = config.data / "cache"
         (self.cache / "img").mkdir(parents=True, exist_ok=True)
-        (self.cache / "artist-photos").mkdir(parents=True, exist_ok=True)
         self._scan_task = None
+        self._fetch_task = None
 
     # ---- lifecycle
 
@@ -163,9 +168,23 @@ class SpinUs:
         app.on_cleanup.append(self._cleanup)
         return app
 
-    async def _startup(self, app):
+    async def scan(self) -> dict:
+        """Rescan the library, then fetch missing artwork / lyrics in the background."""
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, self.library.scan)
+        result = await loop.run_in_executor(None, self.library.scan)
+        self.fetcher.apply_existing()
+        if (self.config.fetch_artwork or self.config.fetch_lyrics) and not self.fetcher.running:
+            self._fetch_task = asyncio.create_task(self._fetch())
+        return result
+
+    async def _fetch(self):
+        try:
+            await asyncio.get_running_loop().run_in_executor(None, self.fetcher.run)
+        except Exception:
+            log.exception("artwork / lyrics fetch failed")
+
+    async def _startup(self, app):
+        await self.scan()
         if self.config.rescan_minutes > 0:
             self._scan_task = asyncio.create_task(self._rescan_loop())
 
@@ -180,7 +199,7 @@ class SpinUs:
         while True:
             await asyncio.sleep(self.config.rescan_minutes * 60)
             try:
-                await asyncio.get_running_loop().run_in_executor(None, self.library.scan)
+                await self.scan()
             except Exception:
                 log.exception("rescan failed")
 
@@ -279,13 +298,12 @@ class SpinUs:
 
     async def library_status(self, request):
         return web.json_response({"scanning": self.library.scanning, "lastScan": self.library.last_scan,
+                                  "fetching": self.fetcher.running, "lastFetch": self.fetcher.last_run,
                                   "musicFolder": str(self.config.music)})
 
     async def library_scan(self, request):
         self.require_admin(request)
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, self.library.scan)
-        return web.json_response(result)
+        return web.json_response(await self.scan())
 
     # ---- user data helpers
 
@@ -296,10 +314,7 @@ class SpinUs:
         return request["ud"]
 
     def artist_image_tag(self, art) -> str | None:
-        if art.image_tag:
-            return art.image_tag
-        p = self.cache / "artist-photos" / f"{art.id}.jpg"
-        return file_tag(p) if p.exists() else None
+        return art.image_tag
 
     def track_json(self, request, t) -> dict:
         favs, plays = self.user_data(request)
@@ -310,7 +325,7 @@ class SpinUs:
             "id": t.id, "title": t.title, "artists": t.artists, "artistIds": t.artist_ids,
             "album": t.album or "", "albumId": t.album_id, "albumArtist": t.album_artist,
             "albumArtistId": t.album_artist_id, "durationMs": t.duration_ms,
-            "imageTag": alb.image_tag if alb else None, "trackNumber": t.track, "discNumber": t.disc,
+            "imageTag": alb.image_tag if alb else t.image_tag, "trackNumber": t.track, "discNumber": t.disc,
             "genres": t.genres, "year": t.year, "date": t.date, "dateAdded": t.added,
             "hasLyrics": t.has_lyrics,
             "userData": {"playCount": pc, "lastPlayed": last, "isFavorite": t.id in favs},
@@ -737,25 +752,33 @@ class SpinUs:
         cache = "public, max-age=31536000, immutable" if request.query.get("tag") else "private, max-age=3600"
         return web.FileResponse(path, headers={"Content-Type": "image/jpeg", "Cache-Control": cache})
 
+    def _fetched(self, kind: str, item_id: str):
+        p = self.fetcher.path(kind, item_id)
+        return (p, file_tag(p)) if p.is_file() else (None, None)
+
     def _image_source(self, item_id: str, kind: str, index: int):
-        """(path to an image file | bytes from an embedded tag, tag) for an item."""
+        """(path to an image file | bytes from an embedded tag, tag) for an item.
+        Files in the music folder win; downloaded artwork fills the gaps."""
         idx = self.library.index
         if t := idx.tracks.get(item_id):
             if t.album_id:
                 item_id = t.album_id
+            elif kind == "primary":
+                data = embedded_picture(t.path)
+                return (data, file_tag(t.path)) if data else self._fetched("track", t.id)
             else:
-                data = embedded_picture(t.path) if kind == "primary" else None
-                return (data, file_tag(t.path)) if data else (None, None)
+                return None, None
         if alb := idx.albums.get(item_id):
             if kind == "backdrop":
                 art = idx.artists.get(alb.artist_id) if alb.artist_id else None
                 return self._image_source(art.id, kind, index) if art else (None, None)
             if alb.cover_file:
-                return alb.cover_file, alb.image_tag
+                return alb.cover_file, file_tag(alb.cover_file)
             if alb.cover_track:
                 data = embedded_picture(alb.cover_track)
-                return (data, alb.image_tag) if data else (None, None)
-            return None, None
+                if data:
+                    return data, file_tag(alb.cover_track)
+            return self._fetched("album", alb.id)
         if art := idx.artists.get(item_id):
             if kind == "backdrop":
                 if 0 <= index < len(art.backdrop_files):
@@ -764,8 +787,7 @@ class SpinUs:
                 return None, None
             if art.image_file:
                 return art.image_file, art.image_tag
-            p = self._artist_photo(art)
-            return (p, file_tag(p)) if p else (None, None)
+            return self._fetched("artist", art.id)
         return None, None
 
     def _image_file(self, item_id, kind, index, width) -> Path | None:
@@ -788,38 +810,6 @@ class SpinUs:
             log.info("bad image for %s: %s", item_id, e)
             return None
         return out
-
-    def _artist_photo(self, art) -> Path | None:
-        """Artist picture from Deezer's public API when the folder has none (cached)."""
-        if not self.config.artist_photos:
-            return None
-        folder = self.cache / "artist-photos"
-        p = folder / f"{art.id}.jpg"
-        miss = folder / f"{art.id}.none"
-        if p.exists():
-            return p
-        if miss.exists() and time.time() - miss.stat().st_mtime < 7 * 86400:
-            return None
-        try:
-            url = "https://api.deezer.com/search/artist?limit=5&q=" + urllib.parse.quote(art.name)
-            with urllib.request.urlopen(url, timeout=6) as r:
-                hits = json.load(r).get("data", [])
-            hit = next((h for h in hits if fold(h.get("name", "")) == art.folded), None)
-            pic = hit and (hit.get("picture_xl") or hit.get("picture_big"))
-            # Deezer's placeholder for artists without a photo has an empty hash.
-            if not pic or "/artist//" in pic:
-                miss.touch()
-                return None
-            with urllib.request.urlopen(pic, timeout=10) as r:
-                data = r.read()
-            tmp = p.with_suffix(".tmp")
-            tmp.write_bytes(data)
-            tmp.replace(p)
-            return p
-        except Exception as e:
-            log.debug("artist photo lookup failed for %s: %s", art.name, e)
-            miss.touch()
-            return None
 
     # ---- presence
 

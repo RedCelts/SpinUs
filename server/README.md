@@ -50,7 +50,8 @@ Command line helpers: `python -m spinus_server adduser NAME [--admin]`,
 | `SPINUS_DATA` | `/data` | Database and image cache |
 | `SPINUS_PORT` | `8484` | Port |
 | `SPINUS_RESCAN_MINUTES` | `15` | How often to look for new files (0 = only on start / button) |
-| `SPINUS_ARTIST_PHOTOS` | `1` | Fetch missing artist photos from Deezer (cached) |
+| `SPINUS_FETCH_ARTWORK` | `1` | Download missing album covers, artist photos and single-song covers from Deezer |
+| `SPINUS_FETCH_LYRICS` | `1` | Download missing lyrics (synced when available) from LRCLIB |
 | `SPINUS_ADMIN_USER` / `SPINUS_ADMIN_PASSWORD` | – | Create the admin on first start instead of on first sign-in |
 
 ## What it reads from your files
@@ -62,10 +63,17 @@ Command line helpers: `python -m spinus_server adduser NAME [--admin]`,
   (or any image there), else the embedded cover.
 - **Artist pictures and backgrounds**: `folder.jpg` / `artist.jpg` and
   `fanart.jpg` / `backdrop.jpg` in the artist folder (Lidarr's
-  `Music/Artist/Album/` layout); otherwise a photo from Deezer.
+  `Music/Artist/Album/` layout).
 - **Bios / album notes**: `artist.nfo` / `album.nfo` (turn on Kodi metadata in
   Lidarr to get these).
 - **Lyrics**: a `.lrc` (synced) or `.txt` file next to the song, or the lyrics tag.
+
+**Anything missing is downloaded automatically** after each scan: album
+covers, artist photos and covers for loose songs from Deezer, and lyrics
+(time-synced when available) from LRCLIB. Downloads go to
+`<data>/fetched/`, never into the music folder, and your own files always
+win. Items with no match are retried every 14 days. The web page shows
+progress.
 
 ALAC, WMA, AIFF and APE files are converted to MP3 on the fly (needs
 ffmpeg, which the Docker image includes); everything else streams as the
