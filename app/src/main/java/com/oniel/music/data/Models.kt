@@ -95,8 +95,23 @@ data class AuthResult(
     val mustChangePassword: Boolean = false
 )
 
-/** A friend (someone you connected with), or a person in a friend request. */
-data class Friend(val id: String, val name: String)
+/** A friend (someone you connected with), or a person in a friend request. Level only for friends. */
+data class Friend(val id: String, val name: String, val level: Int? = null, val title: String? = null)
+
+/** Your listener level and where the XP came from. */
+data class Level(
+    val level: Int,
+    val title: String,
+    val xp: Int,
+    val levelStartXp: Int,
+    val nextLevelXp: Int?,
+    val progress: Float,
+    val nextTitleLevel: Int?,
+    val nextTitle: String?,
+    val breakdown: List<LevelPart>
+)
+
+data class LevelPart(val label: String, val count: Int, val xpEach: Int, val xp: Int)
 
 /** A search hit when adding a friend. [relation]: null, "friends", "requested" (you asked) or "incoming". */
 data class PersonHit(val id: String, val name: String, val relation: String?)

@@ -166,9 +166,22 @@ fun OnielMusicApp() {
     // (covers anything that arrived while the socket was down).
     LaunchedEffect(auth) {
         if (auth == null) { Inbox.unread = 0; return@LaunchedEffect }
+        var tick = 0
         while (true) {
             try { Inbox.unread = client.unreadRecommendations() } catch (e: Exception) { }
             SpinUsWidget.refreshFriendsAsync(context)
+            // Level-up check every 5 minutes.
+            if (tick++ % 5 == 0) {
+                try {
+                    val lv = client.getMyLevel()
+                    if (LevelWatch.leveledUp(context, auth!!.userId, lv.level)) {
+                        android.widget.Toast.makeText(
+                            context, context.getString(R.string.level_up, lv.level, lv.title),
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                } catch (e: Exception) { }
+            }
             kotlinx.coroutines.delay(60_000)
         }
     }

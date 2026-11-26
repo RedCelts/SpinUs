@@ -152,7 +152,33 @@ class SpinUsClient(
     // ---- Friends & recommendations ----
 
     private fun JSONArray?.toFriends(): List<Friend> = if (this == null) emptyList() else
-        (0 until length()).map { i -> getJSONObject(i).let { Friend(it.getString("id"), it.optString("name")) } }
+        (0 until length()).map { i ->
+            getJSONObject(i).let {
+                Friend(it.getString("id"), it.optString("name"), it.optIntOrNull("level"), it.optStringOrNull("title"))
+            }
+        }
+
+    /** Your listener level (XP from songs, minutes, albums, genres, days, likes, playlists...). */
+    suspend fun getMyLevel(): Level {
+        val j = getJson("/api/me/level", "level")
+        val parts = j.optJSONArray("breakdown") ?: JSONArray()
+        val next = j.optJSONObject("nextTitle")
+        return Level(
+            level = j.optInt("level", 1),
+            title = j.optString("title"),
+            xp = j.optInt("xp"),
+            levelStartXp = j.optInt("levelStartXp"),
+            nextLevelXp = j.optIntOrNull("nextLevelXp"),
+            progress = j.optDouble("progress", 0.0).toFloat(),
+            nextTitleLevel = next?.optInt("level"),
+            nextTitle = next?.optString("title"),
+            breakdown = (0 until parts.length()).map { i ->
+                parts.getJSONObject(i).let {
+                    LevelPart(it.optString("label"), it.optInt("count"), it.optInt("xpEach"), it.optInt("xp"))
+                }
+            }
+        )
+    }
 
     /** People you're friends with (both sides agreed, or a scanned QR code). */
     suspend fun getFriends(): List<Friend> = items("/api/friends", "friends").toFriends()

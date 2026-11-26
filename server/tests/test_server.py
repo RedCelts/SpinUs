@@ -425,7 +425,8 @@ async def test_recommendations(client):
     assert (await j(client, "/api/friends", h))["items"] == []
     await befriend(client, h, fh, friend["user"]["id"])
     friends = (await j(client, "/api/friends", h))["items"]
-    assert friends == [{"id": friend["user"]["id"], "name": "Friend"}]
+    assert [(f["id"], f["name"]) for f in friends] == [(friend["user"]["id"], "Friend")]
+    assert friends[0]["level"] >= 1 and friends[0]["title"]
     tracks = (await j(client, "/api/tracks?sort=album", h))["items"]
     album = (await j(client, "/api/albums?sort=name", h))["items"][0]
 
@@ -484,8 +485,8 @@ async def test_friend_connections(client):
     assert (await j(client, "/api/friends/search?q=bet", ah))["items"][0]["relation"] == "requested"
     assert (await j(client, "/api/friends", ah))["items"] == []  # pending isn't friends
     await j(client, "/api/friends/accept", bh, 200, "POST", {"userId": aid})
-    assert (await j(client, "/api/friends", ah))["items"] == [{"id": bid, "name": "Beto"}]
-    assert (await j(client, "/api/friends", bh))["items"] == [{"id": aid, "name": "Ana"}]
+    assert [f["name"] for f in (await j(client, "/api/friends", ah))["items"]] == ["Beto"]
+    assert [f["name"] for f in (await j(client, "/api/friends", bh))["items"]] == ["Ana"]
     assert (await j(client, "/api/recommendations/unread", bh))["count"] == 0
 
     # Asking someone who already asked you = instant friends.
@@ -516,3 +517,30 @@ async def test_friend_connections(client):
     assert (await client.post(f"/api/sessions/{carla['sessionId']}/message", headers=ah, json={"text": "x"})).status == 404
     await j(client, f"/api/sessions/{carla['sessionId']}/message", bh, 204, "POST", {"text": "hi"})
     await cws.close()
+
+
+def test_level_curve():
+    from spinus_server import levels
+    assert levels.level_for_xp(0) == 1 and levels.level_for_xp(59) == 1 and levels.level_for_xp(60) == 2
+    assert levels.level_for_xp(levels.xp_for_level(10)) == 10
+    assert levels.title_for(1) == "Newcomer" and levels.title_for(12) == "Crate Digger" and levels.title_for(60) == "Legend"
+    assert levels.next_title(12) == (15, "Tastemaker") and levels.next_title(55) is None
+
+
+async def test_levels(client):
+    h, me = await login(client)
+    lv = await j(client, "/api/me/level", h)
+    assert lv["level"] == 1 and lv["xp"] == 30 and lv["title"] == "Newcomer" and lv["nextTitle"]["title"] == "Listener"
+    tracks = (await j(client, "/api/tracks?sort=album", h))["items"]
+    for t in tracks[:3]:  # 3 songs, one album, all "Worship"
+        await j(client, f"/api/plays/{t['id']}", h, 204, "POST", {"datePlayed": "2026-11-20T10:00:00Z"})
+    await j(client, f"/api/plays/{tracks[0]['id']}", h, 204, "POST", {"datePlayed": "2026-11-21T10:00:00Z"})
+    await client.put(f"/api/favorites/{tracks[0]['id']}", headers=h)
+    await j(client, "/api/playlists", h, 201, "POST", {"name": "Mix", "trackIds": [t["id"] for t in tracks[:3]]})
+    lv = await j(client, "/api/me/level", h)
+    got = {b["key"]: b["count"] for b in lv["breakdown"]}
+    assert got["songs"] == 3 and got["albums"] == 1 and got["artists"] == 1 and got["genres"] == 1
+    assert got["days"] == 3 and got["likes"] == 1  # 2 play days + today and got["playlists"] == 1 and got["minutes"] == 0
+    # 3*10 + 25 + 15 + 40 + 3*30 + 5 + 50 = 255 XP -> level 3 (240..540)
+    assert lv["xp"] == 255 and lv["level"] == 3 and lv["title"] == "Listener" and 0 < lv["progress"] < 1
+    assert lv["levelStartXp"] == 240 and lv["nextLevelXp"] == 540

@@ -232,7 +232,10 @@ fun FriendsSheet(
                 }
             }
             items(friends, key = { "f-" + it.id }) { f ->
-                PersonRow(f.name) {
+                PersonRow(
+                    f.name,
+                    subtitle = f.level?.let { stringResource(R.string.level_short, it, f.title.orEmpty()) }
+                ) {
                     TextButton(onClick = { removeTarget = f }) { Text(stringResource(R.string.friend_remove)) }
                 }
             }
@@ -318,7 +321,7 @@ private fun FriendsSectionTitle(text: String) {
 }
 
 @Composable
-private fun PersonRow(name: String, actions: @Composable () -> Unit) {
+private fun PersonRow(name: String, subtitle: String? = null, actions: @Composable () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -327,7 +330,12 @@ private fun PersonRow(name: String, actions: @Composable () -> Unit) {
     ) {
         ListenerAvatar(userName = name, sizeDp = 40.dp)
         Spacer(modifier = Modifier.width(12.dp))
-        Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.bodyLarge)
+            subtitle?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+            }
+        }
         actions()
     }
 }

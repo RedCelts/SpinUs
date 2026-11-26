@@ -23,6 +23,7 @@ from aiohttp import web, WSMsgType
 
 from . import __version__
 from .db import Database
+from . import levels
 from .artwork import ArtworkFetcher
 from .library import Library, embedded_picture, file_tag, fold
 
@@ -130,6 +131,8 @@ class SpinUs:
         (self.cache / "img").mkdir(parents=True, exist_ok=True)
         self._scan_task = None
         self._fetch_task = None
+        self._level_cache: dict[str, tuple[float, dict]] = {}
+        self._seen_days: set[tuple[str, str]] = set()
 
     # ---- lifecycle
 
@@ -147,6 +150,7 @@ class SpinUs:
         r.add_post("/api/users", self.add_user)
         r.add_delete("/api/users/{name}", self.remove_user)
         r.add_post("/api/users/{name}/password", self.reset_password)
+        r.add_get("/api/me/level", self.my_level)
         r.add_get("/api/friends", self.friends)
         r.add_get("/api/friends/requests", self.friend_requests)
         r.add_get("/api/friends/search", self.search_people)
@@ -262,6 +266,11 @@ class SpinUs:
             return json_response({"error": "set a new password first", "code": "must_change_password"}, status=403)
         request["auth"] = info
         request["token"] = token
+        # "Days you used SpinUs" (levels): once per user per day.
+        day = time.strftime("%Y-%m-%d", time.gmtime())
+        if (info["user_id"], day) not in self._seen_days:
+            self._seen_days.add((info["user_id"], day))
+            self.db.add_listening_day(info["user_id"], day)
         return await handler(request)
 
     @staticmethod
@@ -434,10 +443,27 @@ class SpinUs:
 
     # ---- friends & recommendations
 
+    def level_of(self, user_id: str, fresh: bool = False) -> dict:
+        """Level summary, cached for a minute (it walks the user's plays)."""
+        hit = self._level_cache.get(user_id)
+        if hit and not fresh and time.time() - hit[0] < 60:
+            return hit[1]
+        data = levels.summary(self.db, self.library.index, user_id)
+        self._level_cache[user_id] = (time.time(), data)
+        return data
+
+    async def my_level(self, request):
+        uid = self.uid(request)
+        loop = asyncio.get_running_loop()
+        return json_response(await loop.run_in_executor(None, lambda: self.level_of(uid, fresh=True)))
+
     async def friends(self, request):
-        """Your friends (people you connected with), A to Z."""
-        return json_response({"items": [{"id": u["id"], "name": u["name"]}
-                                        for u in self.db.friends(self.uid(request))]})
+        """Your friends (people you connected with), A to Z, with their levels."""
+        out = []
+        for u in self.db.friends(self.uid(request)):
+            lv = self.level_of(u["id"])
+            out.append({"id": u["id"], "name": u["name"], "level": lv["level"], "title": lv["title"]})
+        return json_response({"items": out})
 
     async def friend_requests(self, request):
         return json_response(self.db.friend_requests(self.uid(request)))

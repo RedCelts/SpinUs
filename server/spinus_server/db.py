@@ -82,6 +82,11 @@ CREATE TABLE IF NOT EXISTS friendships (
   created REAL NOT NULL,
   PRIMARY KEY (requester, addressee)
 );
+CREATE TABLE IF NOT EXISTS listening_days (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,                 -- YYYY-MM-DD (UTC)
+  PRIMARY KEY (user_id, day)
+);
 CREATE TABLE IF NOT EXISTS scan_cache (
   rel_path TEXT PRIMARY KEY,
   mtime_ns INTEGER NOT NULL,
@@ -209,7 +214,25 @@ class Database:
         return {r["track_id"]: (r["play_count"], r["last_played"])
                 for r in self.q("SELECT * FROM plays WHERE user_id=?", (user_id,))}
 
+    def add_listening_day(self, user_id: str, day: str):
+        self.x("INSERT OR IGNORE INTO listening_days VALUES (?,?)", (user_id, day[:10]))
+
+    def listening_days(self, user_id: str) -> int:
+        n = self.q("SELECT COUNT(*) c FROM listening_days WHERE user_id=?", (user_id,))[0]["c"]
+        if n == 0:
+            # Before days were recorded: count the distinct last-played days.
+            rows = self.q("SELECT DISTINCT substr(last_played,1,10) d FROM plays WHERE user_id=? AND last_played IS NOT NULL",
+                          (user_id,))
+            for r in rows:
+                self.add_listening_day(user_id, r["d"])
+            n = len(rows)
+        return n
+
+    def recommendations_sent(self, user_id: str) -> int:
+        return self.q("SELECT COUNT(*) c FROM recommendations WHERE from_user=?", (user_id,))[0]["c"]
+
     def mark_played(self, user_id: str, track_id: str, when_iso: str):
+        self.add_listening_day(user_id, when_iso)
         self.x("""INSERT INTO plays VALUES (?,?,1,?)
                   ON CONFLICT(user_id, track_id) DO UPDATE SET
                     play_count = play_count + 1,

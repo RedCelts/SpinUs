@@ -78,15 +78,20 @@ fun StatsScreen(
     onBack: () -> Unit
 ) {
     var summary by remember { mutableStateOf<ListeningSummary?>(null) }
+    var level by remember { mutableStateOf<com.oniel.music.data.Level?>(null) }
     LaunchedEffect(player.historyVersion) {
         summary = try { player.buildListeningSummary() } catch (e: Exception) { null }
+    }
+    LaunchedEffect(player.historyVersion) {
+        level = try { client.getMyLevel() } catch (e: Exception) { level }
     }
     StatsContent(
         title = stringResource(R.string.stats_title),
         summary = summary,
         client = client,
         onBack = onBack,
-        modifier = Modifier.statusBarsPadding()
+        modifier = Modifier.statusBarsPadding(),
+        header = level?.let { lv -> { LevelCard(lv) } }
     )
 }
 
@@ -162,7 +167,9 @@ fun StatsContent(
     client: SpinUsClient,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    loadingText: String? = null
+    loadingText: String? = null,
+    /** Shown above the stats (your level card). */
+    header: (@Composable () -> Unit)? = null
 ) {
     var period by rememberSaveable { mutableStateOf(StatsPeriod.WEEK) }
     Column(modifier = modifier.fillMaxSize()) {
@@ -201,6 +208,7 @@ fun StatsContent(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bottomChromePadding()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            if (header != null) item { header() }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(
