@@ -555,3 +555,29 @@ async def test_levels(client):
     # 3*10 + 25 + 15 + 40 + 3*30 + 5 + 50 = 255 XP -> level 2 (60..276)
     assert lv["xp"] == 255 and lv["level"] == 2 and lv["title"] == "Listener" and 0 < lv["progress"] < 1
     assert lv["levelStartXp"] == 60 and lv["nextLevelXp"] == 276
+
+
+async def test_fetch_progress(aiohttp_client, music, tmp_path):
+    """While the download pass runs, /api/library/status reports how far it got."""
+    import threading
+    import spinus_server.artwork as aw
+    aw.REQUEST_GAP = 0
+    gate, seen = threading.Event(), []
+    server = SpinUs(Config(music=music, data=tmp_path / "data", rescan_minutes=0, ffmpeg=FFMPEG))
+
+    def slow_get(url, timeout=10):
+        gate.wait(5)  # hold the first lookup so the test can look mid-run
+        return b'{"data": []}' if "deezer" in url else b"[]" if "search" in url else b"{}"
+    server.fetcher.get = slow_get
+    c = await aiohttp_client(server.make_app())
+    h, _ = await login(c)
+    st = await j(c, "/api/library/status", h)
+    assert st["fetching"] is True
+    p = st["fetchProgress"]
+    assert p["total"] > 0 and p["done"] == 0 and p["current"]["kind"] in ("lyrics", "album", "artist", "track")
+    assert sum(v["total"] for v in p["byKind"].values()) == p["total"]
+    gate.set()
+    while server.fetcher.running:
+        await asyncio.sleep(0.05)
+    st = await j(c, "/api/library/status", h)
+    assert st["fetching"] is False and st["fetchProgress"] is None and st["lastFetch"]["notFound"] == p["total"]

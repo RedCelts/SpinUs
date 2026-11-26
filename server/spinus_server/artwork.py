@@ -58,6 +58,8 @@ class ArtworkFetcher:
         self.get = http_get
         self.running = False
         self.last_run: dict = {}
+        # Live progress while a pass runs (shown on the web page).
+        self.progress: dict = {}
         self._last_request = 0.0
 
     # ---- files
@@ -232,7 +234,12 @@ class ArtworkFetcher:
             jobs = self.todo()
             if jobs:
                 log.info("artwork: looking up %d items", len(jobs))
+            kinds = {k: sum(1 for kk, _ in jobs if kk == k) for k in ("album", "artist", "track", "lyrics")}
+            self.progress = {"done": 0, "total": len(jobs), "found": 0, "current": None,
+                             "byKind": {k: {"done": 0, "total": n} for k, n in kinds.items() if n}}
             for kind, item in jobs:
+                name = getattr(item, "name", None) or getattr(item, "title", "")
+                self.progress["current"] = {"kind": kind, "name": name}
                 try:
                     if kind == "lyrics":
                         text = self.find_lyrics(item)
@@ -245,10 +252,15 @@ class ArtworkFetcher:
                     # Offline / rate-limited: stop and try again next pass.
                     log.info("%s lookup failed (%s); will retry later", kind, e)
                     failed += 1
+                    self.progress["done"] += 1
+                    self.progress["byKind"][kind]["done"] += 1
                     if failed >= 10:
                         break
                     continue
+                self.progress["done"] += 1
+                self.progress["byKind"][kind]["done"] += 1
                 if p:
+                    self.progress["found"] += 1
                     if kind == "lyrics":
                         item.has_lyrics = True
                     else:
@@ -264,3 +276,4 @@ class ArtworkFetcher:
             return self.last_run
         finally:
             self.running = False
+            self.progress = {}

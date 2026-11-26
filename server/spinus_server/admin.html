@@ -29,6 +29,8 @@
   label.chk { display:flex; gap:6px; align-items:center; color:var(--dim); white-space:nowrap; }
   label.chk input { width:auto; margin:0; }
   [hidden] { display:none !important; }
+  .bar { height:10px; border-radius:5px; background:#111116; overflow:hidden; }
+  .bar > div { height:100%; width:0; background:var(--accent); border-radius:5px; transition:width .6s ease; }
 </style>
 </head>
 <body>
@@ -62,6 +64,14 @@
         <div><b id="nArtists">–</b><span>artists</span></div>
       </div>
       <p class="sub" id="scanInfo" style="margin:0 0 12px"></p>
+      <div id="fetchBox" hidden style="margin:0 0 14px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+          <span>Downloading missing artwork and lyrics</span><span id="fetchPct"></span>
+        </div>
+        <div class="bar"><div id="fetchBar"></div></div>
+        <p class="sub" id="fetchNow" style="margin:6px 0 0;font-size:13px"></p>
+        <p class="sub" id="fetchKinds" style="margin:2px 0 0;font-size:13px"></p>
+      </div>
       <button id="scan">Scan for new music</button>
     </section>
 
@@ -122,8 +132,8 @@ async function load() {
   $("nTracks").textContent = s.tracks ?? "–"; $("nAlbums").textContent = s.albums ?? "–"; $("nArtists").textContent = s.artists ?? "–";
   $("scanInfo").textContent = (st.scanning ? "Scanning now… " : "") + "Music folder: " + st.musicFolder +
     (s.finishedAt ? " · last scan " + new Date(s.finishedAt.replace(/\.(\d{3})\d*Z$/, ".$1Z")).toLocaleString() : "") +
-    (st.fetching ? " · downloading missing artwork and lyrics…"
-      : (st.lastFetch && st.lastFetch.found != null ? " · last download: " + st.lastFetch.found + " found, " + st.lastFetch.notFound + " not found" : ""));
+    (!st.fetching && st.lastFetch && st.lastFetch.found != null ? " · last download: " + st.lastFetch.found + " found, " + st.lastFetch.notFound + " not found" : "");
+  showFetch(st);
   if (me.isAdmin) {
     const { items } = await api("/api/users");
     $("users").innerHTML = "";
@@ -151,6 +161,31 @@ async function load() {
       }
       $("users").append(li);
     }
+  }
+}
+
+const KIND = { album: "Album covers", artist: "Artist photos", track: "Song covers", lyrics: "Lyrics" };
+const KIND_ONE = { album: "album cover", artist: "artist photo", track: "song cover", lyrics: "lyrics" };
+let fetchTimer = null;
+function showFetch(st) {
+  const p = st.fetchProgress;
+  $("fetchBox").hidden = !(st.fetching && p && p.total);
+  if (!$("fetchBox").hidden) {
+    const pct = Math.floor(100 * p.done / p.total);
+    $("fetchBar").style.width = pct + "%";
+    $("fetchPct").textContent = p.done + " / " + p.total + " · " + pct + "%";
+    $("fetchNow").textContent = p.current ? "Now: " + KIND_ONE[p.current.kind] + " for " + p.current.name + " · " + p.found + " found so far" : "";
+    $("fetchKinds").textContent = Object.entries(p.byKind || {}).map(([k, v]) => KIND[k] + " " + v.done + "/" + v.total).join(" · ");
+  }
+  // Poll every 2 s while downloading; refresh the whole page once it ends.
+  clearTimeout(fetchTimer);
+  if (st.fetching) {
+    fetchTimer = setTimeout(async () => {
+      try {
+        const next = await api("/api/library/status");
+        if (next.fetching) showFetch(next); else load();
+      } catch (e) {}
+    }, 2000);
   }
 }
 

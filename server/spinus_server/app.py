@@ -378,6 +378,7 @@ class SpinUs:
     async def library_status(self, request):
         return json_response({"scanning": self.library.scanning, "lastScan": self.library.last_scan,
                                   "fetching": self.fetcher.running, "lastFetch": self.fetcher.last_run,
+                                  "fetchProgress": self.fetcher.progress or None,
                                   "musicFolder": str(self.config.music)})
 
     async def library_scan(self, request):
