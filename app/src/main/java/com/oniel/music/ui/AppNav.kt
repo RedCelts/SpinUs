@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
@@ -57,7 +58,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.oniel.music.R
 import com.oniel.music.data.AuthStore
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.SavedAuth
 
 private object Routes {
@@ -92,7 +93,7 @@ private object Routes {
 fun OnielMusicApp() {
     val context = LocalContext.current
     val authStore = remember { AuthStore(context) }
-    val client = remember { JellyfinClient(http = com.oniel.music.net.NetClients.http) }
+    val client = remember { SpinUsClient(http = com.oniel.music.net.NetClients.http) }
     val player: PlayerController = viewModel()
 
     var auth by remember { mutableStateOf<SavedAuth?>(null) }
@@ -134,6 +135,72 @@ fun OnielMusicApp() {
         player.attachClient(client)
     }
 
+    // A friend's reaction (sent from their Friends list) shows as a toast.
+    DisposableEffect(Unit) {
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        client.onMessage = { from, text ->
+            main.post {
+                val label = if (from.isBlank()) text else "$from: $text"
+                android.widget.Toast.makeText(context.applicationContext, label, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        // Recommendations and friend requests: badge + a short note.
+        client.onInbox = { kind, from, unread ->
+            main.post {
+                Inbox.unread = unread
+                Inbox.version++
+                val res = when (kind) {
+                    "recommendation" -> R.string.inbox_toast_rec
+                    "friend-request" -> R.string.inbox_toast_request
+                    else -> R.string.inbox_toast_accepted
+                }
+                android.widget.Toast.makeText(
+                    context.applicationContext, context.getString(res, from), android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+        onDispose { client.onMessage = null; client.onInbox = null }
+    }
+
+    // Badge count: on sign-in and every minute while the app is open
+    // (covers anything that arrived while the socket was down).
+    LaunchedEffect(auth) {
+        if (auth == null) { Inbox.unread = 0; return@LaunchedEffect }
+        var tick = 0
+        while (true) {
+            try { Inbox.unread = client.unreadRecommendations() } catch (e: Exception) { }
+            SpinUsWidget.refreshFriendsAsync(context)
+            // Level-up check every 5 minutes.
+            if (tick++ % 5 == 0) {
+                try {
+                    val lv = client.getMyLevel()
+                    if (LevelWatch.leveledUp(context, auth!!.userId, lv.level)) {
+                        android.widget.Toast.makeText(
+                            context, context.getString(R.string.level_up, lv.level, lv.title),
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                } catch (e: Exception) { }
+            }
+            kotlinx.coroutines.delay(60_000)
+        }
+    }
+
+    // Opened from a friend's QR code (spinus://friend/<code>): connect.
+    val pendingCode = PendingLinks.friendCode
+    LaunchedEffect(pendingCode, auth) {
+        val code = pendingCode ?: return@LaunchedEffect
+        if (auth == null) return@LaunchedEffect // used right after sign-in
+        PendingLinks.friendCode = null
+        val msg = try {
+            context.getString(R.string.friend_added, client.useFriendCode(code))
+        } catch (e: Exception) {
+            context.getString(R.string.friend_code_bad)
+        }
+        Inbox.version++
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+    }
+
     // Listening history follows the account: sync on start / sign-in.
     LaunchedEffect(auth) {
         if (auth != null) player.syncHistoryNow()
@@ -169,9 +236,9 @@ fun OnielMusicApp() {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    // The tab bar stays on every screen, the full player included; the
-    // mini player hides only while the full player is open.
-    val showMiniPlayer = player.currentTrack != null && currentRoute != Routes.PLAYER
+    // The full player takes the whole screen: no tab bar, no mini player.
+    val onPlayer = currentRoute == Routes.PLAYER
+    val showMiniPlayer = player.currentTrack != null && !onPlayer
 
     var showFriends by remember { mutableStateOf(false) }
     val openArtist: (String?, String) -> Unit = { id, name ->
@@ -188,14 +255,14 @@ fun OnielMusicApp() {
         noiseFactor = 0f
     )
 
-    CompositionLocalProvider(LocalJellyfin provides client) {
+    CompositionLocalProvider(LocalSpinUs provides client) {
         Scaffold(
             // Edge to edge: the status / navigation bars are transparent and
             // each screen pads itself (backdrops run up under the status bar).
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             containerColor = pageBackground,
             bottomBar = {
-                Box {
+                if (!onPlayer) Box {
                 // Frosted from halfway down, fading to fully see-through at the top.
                 FadingGlass(
                     state = hazeState,
@@ -446,7 +513,10 @@ fun OnielMusicApp() {
         FriendsSheet(
             client = client,
             myUserId = savedAuth.userId,
-            onDismiss = { showFriends = false }
+            onDismiss = { showFriends = false },
+            onOpenAlbum = { id -> showFriends = false; navController.navigate(Routes.album(id)) },
+            onOpenArtist = { id, name -> showFriends = false; openArtist(id, name) },
+            onPlayTrack = { track -> player.playSingle(track); showFriends = false; navController.navigate(Routes.PLAYER) }
         )
     }
 }

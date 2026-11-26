@@ -25,6 +25,8 @@ private val Context.authDataStore: DataStore<Preferences> by preferencesDataStor
  * Persists the login (server address + token + user) in DataStore
  * Preferences so the app can skip the login screen on the next launch.
  * Nothing else is stored here — the play log lives in [PlayLog].
+ * A login saved by a pre-2.0 (Jellyfin) build reads back as null, so the
+ * app shows the sign-in screen once after the update.
  */
 class AuthStore(private val context: Context) {
 
@@ -34,6 +36,9 @@ class AuthStore(private val context: Context) {
         private val KEY_USER_ID = stringPreferencesKey("user_id")
         private val KEY_USER_NAME = stringPreferencesKey("user_name")
         private val KEY_IS_ADMIN = booleanPreferencesKey("is_admin")
+        /** Which kind of server the login is for. Logins saved before 2.0 (Jellyfin) have none. */
+        private val KEY_BACKEND = stringPreferencesKey("backend")
+        private const val BACKEND = "spinus"
     }
 
     suspend fun save(
@@ -49,6 +54,7 @@ class AuthStore(private val context: Context) {
             prefs[KEY_USER_ID] = userId
             prefs[KEY_USER_NAME] = userName
             prefs[KEY_IS_ADMIN] = isAdmin
+            prefs[KEY_BACKEND] = BACKEND
         }
     }
 
@@ -61,8 +67,9 @@ class AuthStore(private val context: Context) {
             val userName = prefs[KEY_USER_NAME]
             val isAdmin = prefs[KEY_IS_ADMIN]
             if (serverUrl == null || token == null || userId == null ||
-                userName == null || isAdmin == null
+                userName == null || isAdmin == null || prefs[KEY_BACKEND] != BACKEND
             ) {
+                // Missing, or a Jellyfin login from before 2.0: sign in again.
                 null
             } else {
                 SavedAuth(serverUrl, token, userId, userName, isAdmin)

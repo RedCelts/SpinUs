@@ -1,7 +1,7 @@
 package com.oniel.music.data
 
 /**
- * Plain data models for the Jellyfin data layer.
+ * Plain data models for the the server data layer.
  *
  * These are deliberately free of any Android or networking types so the
  * pure logic in [Scoring] and [PlayLog] can be unit-tested on the JVM.
@@ -17,11 +17,11 @@ data class Track(
     val albumArtist: String,
     val runTimeTicks: Long,
     val imageTag: String?,
-    /** Jellyfin UserData.PlayCount (0 when never played). */
+    /** the server UserData.PlayCount (0 when never played). */
     val playCount: Int = 0,
-    /** Jellyfin UserData.LastPlayedDate as an ISO-8601 string, null when never played. */
+    /** the server UserData.LastPlayedDate as an ISO-8601 string, null when never played. */
     val lastPlayedDate: String? = null,
-    /** Jellyfin UserData.IsFavorite. */
+    /** the server UserData.IsFavorite. */
     val isFavorite: Boolean = false,
     /** Id of the first artist (ArtistItems, else AlbumArtists); null if unknown. */
     val artistId: String? = null,
@@ -45,9 +45,9 @@ data class Album(
     val dateCreated: String?,
     val imageTag: String?,
     val childCount: Int,
-    /** Jellyfin UserData.LastPlayedDate, null when never played. */
+    /** the server UserData.LastPlayedDate, null when never played. */
     val lastPlayedDate: String?,
-    /** Jellyfin UserData.PlayCount. */
+    /** the server UserData.PlayCount. */
     val playCount: Int,
     /** Id of the album artist (AlbumArtists[0]), null if unknown. */
     val artistId: String? = null
@@ -90,7 +90,49 @@ data class AuthResult(
     val token: String,
     val userId: String,
     val userName: String,
-    val isAdmin: Boolean
+    val isAdmin: Boolean,
+    /** Signed in with a temporary password: must set their own before anything else. */
+    val mustChangePassword: Boolean = false
+)
+
+/** A friend (someone you connected with), or a person in a friend request. Level only for friends. */
+data class Friend(val id: String, val name: String, val level: Int? = null, val title: String? = null)
+
+/** Your listener level and where the XP came from. */
+data class Level(
+    val level: Int,
+    val title: String,
+    val xp: Int,
+    val levelStartXp: Int,
+    val nextLevelXp: Int?,
+    val progress: Float,
+    val nextTitleLevel: Int?,
+    val nextTitle: String?,
+    val breakdown: List<LevelPart>
+)
+
+data class LevelPart(val label: String, val count: Int, val xpEach: Int, val xp: Int)
+
+/** A search hit when adding a friend. [relation]: null, "friends", "requested" (you asked) or "incoming". */
+data class PersonHit(val id: String, val name: String, val relation: String?)
+
+data class FriendRequests(val incoming: List<Friend>, val outgoing: List<Friend>)
+
+/** Something a friend recommended to you. [itemType] is "track", "album" or "artist". */
+data class Recommendation(
+    val id: String,
+    val from: String,
+    val itemType: String,
+    val itemId: String,
+    val title: String,
+    val subtitle: String?,
+    val message: String?,
+    val imageId: String,
+    val imageTag: String?,
+    val albumId: String?,
+    val artistId: String?,
+    val read: Boolean,
+    val sentAt: String
 )
 
 /** One week's listening, built only from the on-device play log. */
@@ -130,7 +172,7 @@ data class ItemDetails(
     val primaryImageTag: String?,
     /** The item's own backdrop images (artists usually have these). */
     val backdropTags: List<String>,
-    /** Where Jellyfin says to take a backdrop from when the item has none (album -> artist). */
+    /** Where the server says to take a backdrop from when the item has none (album -> artist). */
     val parentBackdropItemId: String?,
     val parentBackdropTags: List<String>,
     /** Album artist for albums; null for artists. */

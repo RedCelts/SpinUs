@@ -12,13 +12,13 @@
     <string name="tab_settings">Settings</string>
 
     <!-- Login -->
-    <string name="login_intro">Sign in to your Jellyfin server to listen to your music.</string>
+    <string name="login_intro">Sign in to your SpinUs server to listen to your music.</string>
     <string name="login_server_label">Server address</string>
-    <string name="login_server_hint">http://192.168.1.10:8096</string>
+    <string name="login_server_hint">192.168.1.10</string>
     <string name="login_username_label">Username</string>
     <string name="login_password_label">Password</string>
     <string name="login_button">Sign in</string>
-    <string name="login_note">On your home network use http://&lt;server-IP&gt;:8096. Away from home, turn on built-in Tailscale below and use your server\'s Tailscale address.</string>
+    <string name="login_note">On your home network type your server\'s IP address (port 8484 is added for you). Away from home, turn on built-in Tailscale below and use your server\'s Tailscale address. The first person to sign in to a new server becomes its admin.</string>
 
     <!-- Home -->
     <string name="home_title">Home</string>
@@ -66,7 +66,7 @@
 
     <!-- Listening history sync -->
     <string name="history_title">Listening history</string>
-    <string name="history_subtitle">Saved to your Jellyfin account, so it stays after reinstalling and follows you to any phone you sign in on.</string>
+    <string name="history_subtitle">Saved to your SpinUs account, so it stays after reinstalling and follows you to any phone you sign in on.</string>
     <string name="history_syncing">Syncing…</string>
     <string name="history_synced">Synced at %1$s</string>
     <string name="history_not_yet">Not synced yet</string>
@@ -105,8 +105,8 @@
 
     <!-- Friends -->
     <string name="friends_title">Friends</string>
-    <string name="friends_subtitle">Who on your server is listening to music right now</string>
-    <string name="friends_none">Nobody is listening to music right now.</string>
+    <string name="friends_subtitle">Tap someone to send a reaction.</string>
+    <string name="friends_none">None of your friends are listening right now.</string>
     <string name="emoji_title">Send a reaction to %1$s</string>
 
     <!-- Library -->
@@ -146,7 +146,7 @@
     <string name="stats_minutes_short">%1$d min</string>
     <string name="stats_streak">%1$d day streak</string>
     <string name="stats_no_week">Nothing played this week yet.</string>
-    <string name="stats_note">This week counts each song once, from its last-played date — Jellyfin does not keep a dated play history, and minutes are estimated from track lengths. Past weeks and streaks are recorded on this device from the day the app was installed.</string>
+    <string name="stats_note">This week counts each song once, from its last-played date, and minutes are estimated from track lengths. Past weeks and streaks are recorded on this device from the day the app was installed.</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -161,7 +161,9 @@
     <string name="settings_crossfade">Crossfade</string>
     <string name="settings_crossfade_seconds">%1$d seconds</string>
     <string name="settings_crossfade_off">Off — songs play back to back</string>
-    <string name="settings_crossfade_note">The end of each song fades out while the next fades in. The fade starts early when a song is already fading out or ends in silence, and silence at the start of the next song is skipped. Songs from the same album play straight through. 0 turns crossfade off.</string>
+    <string name="settings_crossfade_note">The end of each song fades out while the next fades in. The fade starts early when a song is already fading out or ends in silence, and silence at the start of the next song is skipped. 0 turns crossfade off.</string>
+    <string name="settings_crossfade_albums">Crossfade within albums</string>
+    <string name="settings_crossfade_albums_desc">Off: songs from the same album play straight through with no fade (best for live albums and medleys).</string>
 
     <!-- v1.1.0: item menus, playlists, genres -->
     <string name="more_options">More options</string>
@@ -205,6 +207,89 @@
     <string name="retry">Try again</string>
     <string name="close">Close</string>
     <string name="settings_share_stats">Share my listening stats with friends</string>
-    <string name="settings_share_stats_desc">Friends on this server can open your stats from their Friends list while your app is open.</string>
+    <string name="settings_share_stats_desc">Your friends can open your stats from their Friends list while your app is open.</string>
     <string name="mix_song_count">%1$d songs</string>
+    <!-- v2.1.0 cache -->
+    <string name="cache_title">Cache</string>
+    <string name="cache_subtitle">Songs you play and artwork are kept on this phone, so they load instantly and keep playing when the connection drops.</string>
+    <string name="cache_used">Songs: %1$s of %2$s · Artwork: %3$s</string>
+    <string name="cache_size_label">Space for songs</string>
+    <string name="cache_size_restart">The new size applies the next time the app starts.</string>
+    <string name="cache_preload">Pre-load upcoming songs</string>
+    <string name="cache_preload_desc">On Wi-Fi, the next 2 songs in your queue download ahead of time.</string>
+    <string name="cache_clear">Clear cache</string>
+    <string name="cache_clearing">Clearing…</string>
+    <!-- v2.2.0: passwords -->
+    <string name="pw_set_title">Set your password</string>
+    <string name="pw_change_title">Change password</string>
+    <string name="pw_forced_note">You signed in with a temporary password. Choose your own to continue.</string>
+    <string name="pw_current">Current password</string>
+    <string name="pw_new">New password</string>
+    <string name="pw_again">New password again</string>
+    <string name="pw_too_short">Use at least 6 characters.</string>
+    <string name="pw_mismatch">The two new passwords don\'t match.</string>
+    <string name="pw_changed">Password changed. Your other devices were signed out.</string>
+    <string name="pw_save">Save</string>
+    <!-- v2.2.0: recommendations -->
+    <string name="rec_friend_action">Recommend to a friend</string>
+    <string name="rec_friend_title">Recommend to a friend</string>
+    <string name="rec_friend_none">You have no friends on SpinUs yet. Add some from Friends (search or QR code).</string>
+    <string name="rec_friend_note">Add a note (optional)</string>
+    <string name="rec_friend_send">Send</string>
+    <string name="rec_friend_sent">Recommendation sent</string>
+    <string name="rec_from_song">%1$s recommended a song</string>
+    <string name="rec_from_album">%1$s recommended an album</string>
+    <string name="rec_from_artist">%1$s recommended an artist</string>
+    <string name="rec_dismiss">Dismiss</string>
+    <string name="rec_inbox_title">Recommended to you</string>
+    <string name="inbox_toast_rec">%1$s recommended something to you</string>
+    <string name="inbox_toast_request">%1$s wants to be friends</string>
+    <string name="inbox_toast_accepted">You and %1$s are now friends</string>
+    <!-- v2.2.0: friends -->
+    <string name="friend_add">Add friend</string>
+    <string name="friend_my_qr">My QR code</string>
+    <string name="friend_scan">Scan</string>
+    <string name="friend_requests">Friend requests</string>
+    <string name="friend_accept">Accept</string>
+    <string name="friend_decline">Decline</string>
+    <string name="friend_request">Add</string>
+    <string name="friends_listening">Listening now</string>
+    <string name="friends_yours">Your friends (%1$d)</string>
+    <string name="friends_empty">Add friends by searching their username or scanning their QR code.</string>
+    <string name="friend_remove">Remove</string>
+    <string name="friend_remove_title">Remove %1$s?</string>
+    <string name="friend_remove_note">You\'ll stop seeing each other\'s listening and recommendations. You can add each other again later.</string>
+    <string name="friend_requested">Waiting for them to accept</string>
+    <string name="friend_cancel_request">Cancel</string>
+    <string name="friend_search_hint">Username</string>
+    <string name="friend_search_none">No one with that name.</string>
+    <string name="friend_status_friends">Friends</string>
+    <string name="friend_status_requested">Requested</string>
+    <string name="friend_qr_note">Anyone who scans this becomes your friend. Show it in person; tap New code if it got out.</string>
+    <string name="friend_qr_reset">New code</string>
+    <string name="friend_added">You and %1$s are now friends</string>
+    <string name="friend_code_bad">That isn\'t a valid SpinUs friend code.</string>
+    <string name="friend_scan_unavailable">The scanner couldn\'t open. Scan the code with your camera app instead.</string>
+    <!-- v2.3.0 widget -->
+    <string name="widget_description">Now playing, controls and friends listening</string>
+    <string name="widget_nothing">Nothing playing</string>
+    <string name="widget_art">Album art</string>
+    <string name="widget_prev">Previous</string>
+    <string name="widget_play">Play or pause</string>
+    <string name="widget_next">Next</string>
+    <string name="widget_friends_none">No friends listening right now</string>
+    <string name="widget_friends_one">%1$s is listening</string>
+    <string name="widget_friends_two">%1$s and %2$s are listening</string>
+    <string name="widget_friends_many">%1$s, %2$s and %3$d more are listening</string>
+    <!-- v2.4.0 levels -->
+    <string name="level_label">Level %1$d</string>
+    <string name="level_short">Level %1$d · %2$s</string>
+    <string name="level_total_xp">%1$s XP</string>
+    <string name="level_to_next">%1$s XP to Level %2$d</string>
+    <string name="level_max">Top level reached!</string>
+    <string name="level_next_title">Next title: %1$s at Level %2$d</string>
+    <string name="level_breakdown">Where your XP comes from</string>
+    <string name="level_part_detail">%1$s × %2$d XP</string>
+    <string name="level_tap_details">Tap to see where your XP comes from</string>
+    <string name="level_up">🎉 Level up! You\'re now Level %1$d · %2$s</string>
 </resources>

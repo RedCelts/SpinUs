@@ -14,7 +14,7 @@ import java.security.MessageDigest
 
 /**
  * Hands cover art and artist photos to Android Auto, which only accepts
- * content:// artwork. The real (Jellyfin / Deezer) image URL rides in the
+ * content:// artwork. The real (SpinUs server / Deezer) image URL rides in the
  * query; the picture is downloaded once and kept in the app's cache.
  */
 class ArtworkProvider : ContentProvider() {

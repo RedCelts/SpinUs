@@ -8,7 +8,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaConstants
 import com.oniel.music.data.Album
 import com.oniel.music.data.AuthStore
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.ListenSignals
 import com.oniel.music.data.MixRules
 import com.oniel.music.data.Mix
@@ -51,16 +51,16 @@ class AutoLibrary(private val context: Context) {
     }
 
     private val mutex = Mutex()
-    private var client: JellyfinClient? = null
+    private var client: SpinUsClient? = null
     private var tracks: List<Track> = emptyList()
     private var albums: List<Album> = emptyList()
     private var loadedAt = 0L
 
     /** The signed-in client (restored from the saved login). */
-    suspend fun client(): JellyfinClient? {
+    suspend fun client(): SpinUsClient? {
         client?.let { return it }
         val saved = try { AuthStore(context).load() } catch (e: Exception) { null } ?: return null
-        return JellyfinClient(http = NetClients.http).also {
+        return SpinUsClient(http = NetClients.http).also {
             it.restoreSession(saved.serverUrl, saved.token, saved.userId, saved.userName, saved.isAdmin)
             client = it
         }
@@ -167,7 +167,7 @@ class AutoLibrary(private val context: Context) {
         }
     }
 
-    private suspend fun home(c: JellyfinClient): List<MediaItem> {
+    private suspend fun home(c: SpinUsClient): List<MediaItem> {
         ensureLibrary()
         val out = mutableListOf<MediaItem>()
         mixes().forEach { mix ->
@@ -318,7 +318,7 @@ class AutoLibrary(private val context: Context) {
         return MediaItem.Builder().setMediaId(id).setMediaMetadata(md.build()).build()
     }
 
-    private fun albumFolder(a: Album, c: JellyfinClient, group: String? = null): MediaItem {
+    private fun albumFolder(a: Album, c: SpinUsClient, group: String? = null): MediaItem {
         val extras = Bundle().apply {
             putInt(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_PLAYABLE, MediaConstants.EXTRAS_VALUE_CONTENT_STYLE_LIST_ITEM)
             group?.let { putString(MediaConstants.EXTRAS_KEY_CONTENT_STYLE_GROUP_TITLE, it) }
@@ -358,10 +358,10 @@ class AutoLibrary(private val context: Context) {
         return MediaItem.Builder().setMediaId(id).setMediaMetadata(md.build()).build()
     }
 
-    private fun songItems(listId: String, list: List<Track>, c: JellyfinClient): List<MediaItem> =
+    private fun songItems(listId: String, list: List<Track>, c: SpinUsClient): List<MediaItem> =
         list.take(500).map { songItem(listId, it, c) }
 
-    private fun songItem(listId: String, t: Track, c: JellyfinClient): MediaItem {
+    private fun songItem(listId: String, t: Track, c: SpinUsClient): MediaItem {
         TrackRegistry.put(t)
         val md = MediaMetadata.Builder()
             .setTitle(t.title)

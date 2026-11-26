@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -47,7 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.oniel.music.R
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Playlist
 import com.oniel.music.data.Track
 import kotlinx.coroutines.launch
@@ -57,7 +58,7 @@ import kotlinx.coroutines.launch
  * (TrackRow and friends) can offer their ⋮ menu without every screen
  * passing the client down.
  */
-val LocalJellyfin = staticCompositionLocalOf<JellyfinClient?> { null }
+val LocalSpinUs = staticCompositionLocalOf<SpinUsClient?> { null }
 
 /**
  * Height of the frosted bottom chrome (mini player + tab bar + system nav
@@ -88,14 +89,14 @@ sealed class ActionTarget {
 }
 
 /** The item id favorites are stored against (artist looked up by name if needed). */
-private suspend fun ActionTarget.favoriteId(client: JellyfinClient): String? = when (this) {
+private suspend fun ActionTarget.favoriteId(client: SpinUsClient): String? = when (this) {
     is ActionTarget.Song -> track.id
     is ActionTarget.AlbumItem -> albumId
     is ActionTarget.ArtistItem -> artistId ?: client.getArtistByName(name)?.id
 }
 
 /** Every song the target stands for, as playlist item ids. */
-private suspend fun ActionTarget.trackIds(client: JellyfinClient): List<String> = when (this) {
+private suspend fun ActionTarget.trackIds(client: SpinUsClient): List<String> = when (this) {
     is ActionTarget.Song -> listOf(track.id)
     is ActionTarget.AlbumItem -> client.getAlbumTracks(albumId).map { it.id }
     is ActionTarget.ArtistItem -> {
@@ -106,17 +107,18 @@ private suspend fun ActionTarget.trackIds(client: JellyfinClient): List<String> 
 
 /**
  * ⋮ button for a song, album or artist row: Add to / Remove from
- * favorites, Add to playlist, New playlist.
+ * favorites, Add to playlist, New playlist, Recommend to a friend.
  */
 @Composable
 fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
-    val client = LocalJellyfin.current ?: return
+    val client = LocalSpinUs.current ?: return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var open by remember { mutableStateOf(false) }
     var favorite by remember(target) { mutableStateOf<Boolean?>(null) }
     var playlistDialog by remember { mutableStateOf(false) }
     var startWithNew by remember { mutableStateOf(false) }
+    var recommendDialog by remember { mutableStateOf(false) }
 
     // Look up the favorite state when the menu opens (fast for songs
     // from library lists: their flag is already known).
@@ -196,7 +198,16 @@ fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
                 leadingIcon = { Icon(Icons.Filled.Create, contentDescription = null) },
                 onClick = { open = false; startWithNew = true; playlistDialog = true }
             )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.rec_friend_action)) },
+                leadingIcon = { Icon(androidx.compose.material.icons.Icons.Filled.Share, contentDescription = null) },
+                onClick = { open = false; recommendDialog = true }
+            )
         }
+    }
+
+    if (recommendDialog) {
+        RecommendDialog(client = client, target = target, onDismiss = { recommendDialog = false })
     }
 
     if (playlistDialog) {
@@ -217,7 +228,7 @@ fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
  */
 @Composable
 fun AddToPlaylistDialog(
-    client: JellyfinClient,
+    client: SpinUsClient,
     title: String,
     resolveTrackIds: suspend () -> List<String>,
     onDismiss: () -> Unit,

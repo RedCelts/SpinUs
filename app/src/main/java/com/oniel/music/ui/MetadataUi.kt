@@ -49,10 +49,10 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.oniel.music.R
 import com.oniel.music.data.ItemDetails
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 
 /** Backdrop URL for an item: its own, else its parent's (album -> artist). */
-fun JellyfinClient.backdropFor(details: ItemDetails?, width: Int = 1280): String? {
+fun SpinUsClient.backdropFor(details: ItemDetails?, width: Int = 1280): String? {
     val (itemId, tag) = details?.backdrop ?: return null
     return try {
         backdropUrl(itemId, tag, width)
@@ -277,7 +277,7 @@ fun DetailLine(parts: List<String?>, modifier: Modifier = Modifier) {
  */
 @Composable
 fun ArtistInfoCard(
-    client: JellyfinClient,
+    client: SpinUsClient,
     artist: ItemDetails,
     onClick: () -> Unit,
     modifier: Modifier = Modifier

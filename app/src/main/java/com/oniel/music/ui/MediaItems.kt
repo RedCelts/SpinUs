@@ -4,7 +4,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Track
 import java.util.concurrent.ConcurrentHashMap
 
@@ -26,7 +26,7 @@ private const val EXTRA_ARTIST_ID = "artist_id"
  * extras PlaybackService needs (runtime for crossfade timing, album id).
  * [artworkUri] lets Android Auto get the cover through ArtworkProvider.
  */
-fun Track.toPlayableItem(client: JellyfinClient?, artworkUri: (String) -> Uri = { Uri.parse(it) }): MediaItem {
+fun Track.toPlayableItem(client: SpinUsClient?, artworkUri: (String) -> Uri = { Uri.parse(it) }): MediaItem {
     TrackRegistry.put(this)
     val url = client?.audioUrl(id) ?: ""
     val extras = Bundle().apply {

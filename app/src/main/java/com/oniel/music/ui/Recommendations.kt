@@ -8,7 +8,7 @@ import com.oniel.music.data.DeezerClient
 import com.oniel.music.data.DzAlbum
 import com.oniel.music.data.DzArtist
 import com.oniel.music.data.DzTrack
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Pick
 import com.oniel.music.data.PlayLog
 import com.oniel.music.data.TasteArtist
@@ -30,9 +30,9 @@ class Recommendations(context: Context, private val deezer: DeezerClient) {
 
     private val cacheFile = File(context.applicationContext.filesDir, "recs/additions.json")
 
-    /** "You might enjoy": library picks (needs Jellyfin's similar albums for a few seeds). */
+    /** "You might enjoy": library picks (needs the server's similar albums for a few seeds). */
     suspend fun youMightEnjoy(
-        client: JellyfinClient,
+        client: SpinUsClient,
         profile: TasteProfile,
         albums: List<Album>,
         tracks: List<Track>,

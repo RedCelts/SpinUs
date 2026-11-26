@@ -6,3 +6,8 @@ local.properties
 *.iml
 manual-build/work/
 app/libs/*.aar
+
+# SpinUs server
+__pycache__/
+*.pyc
+.pytest_cache/

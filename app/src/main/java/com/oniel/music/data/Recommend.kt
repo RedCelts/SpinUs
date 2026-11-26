@@ -7,17 +7,17 @@ import kotlin.random.Random
 
 /**
  * Home-screen recommendations. Pure logic (no Android, no network) so it
- * is unit-tested on the JVM; the network calls live in JellyfinClient
+ * is unit-tested on the JVM; the network calls live in SpinUsClient
  * (similar albums) and DeezerClient (music outside the library).
  *
  * Taste = which artists this person actually listens to:
  * - every logged play (PlayLog) counts, with a 30-day half-life, so this
  *   month's listening matters most;
- * - Jellyfin play counts add a log-damped "long-term" weight;
+ * - Server play counts add a log-damped "long-term" weight;
  * - favorites add a bonus.
  */
 
-/** Text key for matching names across Jellyfin and Deezer: no accents,
+/** Text key for matching names across the server and Deezer: no accents,
  *  case, punctuation, "feat." parts or "(Live)" style suffixes. */
 fun matchKey(text: String): String {
     var s = Normalizer.normalize(text, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
@@ -83,7 +83,7 @@ object YouMightEnjoy {
     const val MAX_PICKS = 14
 
     /**
-     * [similarBySeed]: Jellyfin's similar albums for a few seed albums
+     * [similarBySeed]: the server's similar albums for a few seed albums
      * (the albums played most lately), keyed by the seed album.
      */
     fun pick(
@@ -109,7 +109,7 @@ object YouMightEnjoy {
         }.take(4)
         fromFavorites.forEach { used += it.album.id }
 
-        // B) Albums Jellyfin finds similar to what you've been playing,
+        // B) Albums the server finds similar to what you've been playing,
         //    by other artists (variety), not heard lately.
         val topKeys = top.take(3).map { it.key }.toSet()
         val similar = similarBySeed.flatMap { (seed, list) ->

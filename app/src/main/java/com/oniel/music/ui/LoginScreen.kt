@@ -32,19 +32,20 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.oniel.music.R
 import com.oniel.music.data.AuthStore
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.SavedAuth
 import kotlinx.coroutines.launch
 
 /**
- * First-run sign in. Server address is the Jellyfin address:
- * http://<server-IP>:8096 on the home network, or the Tailscale https
- * address when away. On success the credentials are saved in AuthStore
+ * First-run sign in. Server address is the SpinUs server:
+ * <server-IP> (port 8484 is assumed) on the home network, or its
+ * Tailscale address when away. The first sign-in on a new server creates
+ * the admin account. On success the credentials are saved in AuthStore
  * and the app moves to Home.
  */
 @Composable
 fun LoginScreen(
-    client: JellyfinClient,
+    client: SpinUsClient,
     authStore: AuthStore,
     onLoggedIn: (SavedAuth) -> Unit,
     initialServer: String? = null
@@ -55,6 +56,38 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // Signed in with a temporary password: (address, result) until a new one is set.
+    var mustChange by remember { mutableStateOf<Pair<String, com.oniel.music.data.AuthResult>?>(null) }
+
+    suspend fun finish(address: String, result: com.oniel.music.data.AuthResult) {
+        // Open the presence socket now, so friends see this user.
+        try {
+            client.connectPresence()
+        } catch (e: Exception) {
+            // Presence is best-effort; sign-in still counts.
+        }
+        authStore.save(
+            serverUrl = address,
+            token = result.token,
+            userId = result.userId,
+            userName = result.userName,
+            isAdmin = result.isAdmin
+        )
+        onLoggedIn(SavedAuth(address, result.token, result.userId, result.userName, result.isAdmin))
+    }
+
+    mustChange?.let { (address, result) ->
+        ChangePasswordDialog(
+            client = client,
+            knownCurrent = password,
+            forced = true,
+            onDone = {
+                mustChange = null
+                scope.launch { finish(address, result.copy(mustChangePassword = false)) }
+            },
+            onDismiss = {}
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -135,32 +168,19 @@ fun LoginScreen(
                 scope.launch {
                     try {
                         val result = client.login(address, username.trim(), password)
-                        // Open the presence socket now: without it the
-                        // server only ever shows this user's own session,
-                        // so friends would look broken.
-                        try {
-                            client.connectPresence()
-                        } catch (e: Exception) {
-                            // Presence is best-effort; sign-in still counts.
+                        if (result.mustChangePassword) {
+                            mustChange = address to result
+                        } else {
+                            finish(address, result)
                         }
-                        authStore.save(
-                            serverUrl = address,
-                            token = result.token,
-                            userId = result.userId,
-                            userName = result.userName,
-                            isAdmin = result.isAdmin
-                        )
-                        onLoggedIn(
-                            SavedAuth(
-                                serverUrl = address,
-                                token = result.token,
-                                userId = result.userId,
-                                userName = result.userName,
-                                isAdmin = result.isAdmin
-                            )
-                        )
                     } catch (e: Exception) {
-                        error = "Could not sign in. Check the address and your password."
+                        val msg = e.message.orEmpty()
+                        error = when {
+                            "HTTP 401" in msg -> "Wrong username or password."
+                            "not a SpinUs server" in msg ->
+                                "That address answered, but it isn't a SpinUs server. SpinUs no longer uses Jellyfin: use the SpinUs server's address (port 8484)."
+                            else -> "Could not reach the server. Check the address and that the SpinUs server is running."
+                        }
                     } finally {
                         busy = false
                     }

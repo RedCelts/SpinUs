@@ -184,9 +184,37 @@ fun SettingsScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Spacer(modifier = Modifier.height(8.dp))
+        run {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            var withinAlbums by remember { mutableStateOf(Crossfade.fadeWithinAlbums(ctx)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_crossfade_albums),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_crossfade_albums_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = withinAlbums,
+                    onCheckedChange = {
+                        withinAlbums = it
+                        Crossfade.setFadeWithinAlbums(ctx, it)
+                    }
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(24.dp))
 
         TailscaleCard()
+        Spacer(modifier = Modifier.height(24.dp))
+
+        CacheCard(modifier = Modifier.fillMaxWidth())
         Spacer(modifier = Modifier.height(24.dp))
 
         HistorySyncCard(
@@ -196,6 +224,25 @@ fun SettingsScreen(
             onSyncNow = onSyncHistory
         )
         Spacer(modifier = Modifier.height(24.dp))
+
+        run {
+            var showPw by remember { mutableStateOf(false) }
+            val client = LocalSpinUs.current
+            if (client != null) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { showPw = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.pw_change_title)) }
+                Spacer(modifier = Modifier.height(12.dp))
+                if (showPw) {
+                    ChangePasswordDialog(
+                        client = client,
+                        onDone = { showPw = false },
+                        onDismiss = { showPw = false }
+                    )
+                }
+            }
+        }
 
         Button(
             onClick = { showServerDialog = true },
@@ -227,7 +274,13 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.6.0"),
+            text = stringResource(
+                R.string.settings_version,
+                run {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { null } ?: ""
+                }
+            ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

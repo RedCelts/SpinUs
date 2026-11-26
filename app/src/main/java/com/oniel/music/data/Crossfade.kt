@@ -91,13 +91,22 @@ object Crossfade {
         return minOf(crossfadeMs, maxOf(MIN_FADE_MS, remaining))
     }
 
-    /** Two tracks from the same album play straight through (no crossfade). */
+    /** Setting: crossfade between songs of the same album too (default on). */
+    fun fadeWithinAlbums(ctx: android.content.Context): Boolean =
+        ctx.getSharedPreferences("playback", android.content.Context.MODE_PRIVATE)
+            .getBoolean("fade_within_albums", true)
+
+    fun setFadeWithinAlbums(ctx: android.content.Context, on: Boolean) =
+        ctx.getSharedPreferences("playback", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("fade_within_albums", on).apply()
+
+    /** Two tracks from the same album (played straight through unless [fadeWithinAlbums]). */
     fun sameAlbum(albumA: String?, albumB: String?): Boolean =
         !albumA.isNullOrEmpty() && albumA == albumB
 
     /**
      * The track length to time the fade against: the player's own
-     * duration when the stream reports one (> 0), otherwise Jellyfin's
+     * duration when the stream reports one (> 0), otherwise the server's
      * runtime for the track (a transcoded stream reports no length —
      * ExoPlayer returns C.TIME_UNSET, a large negative number). 0 when
      * neither is known, which disables the fade for that track.

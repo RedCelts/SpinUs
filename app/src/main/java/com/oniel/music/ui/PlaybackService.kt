@@ -49,8 +49,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Foreground playback service. Declared explicitly in AndroidManifest.xml.
  * The UI talks to it through a MediaController (see PlayerController).
  *
- * 1. Auth on audio requests. Jellyfin 12.2.0's universal stream endpoint
- *    needs the `Authorization: MediaBrowser Token="..."` header. Both
+ * 1. Auth on audio requests. The SpinUs server's stream endpoint takes
+ *    the `Authorization: Bearer ...` header (the URL carries the token
+ *    too). Both
  *    players share one [OkHttpDataSource.Factory] that carries it (built on
  *    NetClients.http, so built-in Tailscale routing applies to streams).
  *
@@ -73,7 +74,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *    have worked anyway. Swapping players needs no seek at all.
  *
  *    The track's length comes from the player when the stream reports
- *    one, and otherwise from Jellyfin's RunTimeTicks (sent in the
+ *    one, and otherwise from the server's RunTimeTicks (sent in the
  *    MediaItem extras by PlayerController), so a transcoded stream still
  *    crossfades.
  *
@@ -100,7 +101,7 @@ class PlaybackService : MediaLibraryService() {
         const val ACTION_SET_CROSSFADE_SECONDS = "com.oniel.music.SET_CROSSFADE_SECONDS"
         const val EXTRA_CROSSFADE_SECONDS = "crossfade_seconds"
 
-        /** MediaMetadata extras key: track length from Jellyfin, in ms. */
+        /** MediaMetadata extras key: track length from the server, in ms. */
         const val EXTRA_RUNTIME_MS = "runtime_ms"
         /** MediaMetadata extras key: the track's album id (same album = no crossfade). */
         const val EXTRA_ALBUM_ID = "album_id"
@@ -395,9 +396,61 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    // ---- Home-screen widget ----
+
+    /** Keeps the widget in step with the active player's song and play state. */
+    private val widgetListener = object : Player.Listener {
+        override fun onEvents(p: Player, events: Player.Events) {
+            if (p !== player) return
+            if (events.containsAny(
+                    Player.EVENT_MEDIA_ITEM_TRANSITION,
+                    Player.EVENT_IS_PLAYING_CHANGED,
+                    Player.EVENT_MEDIA_METADATA_CHANGED
+                )
+            ) pushWidget()
+        }
+    }
+
+    private fun pushWidget() {
+        val p = player ?: return
+        val md = p.mediaMetadata
+        try {
+            SpinUsWidget.onPlayback(
+                this,
+                md.title?.toString(),
+                md.artist?.toString(),
+                p.isPlaying || p.playWhenReady,
+                md.artworkUri
+            )
+        } catch (e: Exception) {
+            // The widget is an extra; never let it disturb playback.
+        }
+    }
+
+    /** Widget buttons (play/pause, next, previous). */
+    override fun onStartCommand(intent: android.content.Intent?, flags: Int, startId: Int): Int {
+        val p = player
+        when (intent?.action) {
+            SpinUsWidget.ACTION_TOGGLE -> {
+                if (p != null && p.mediaItemCount > 0) { if (p.isPlaying) p.pause() else p.play() }
+                return START_NOT_STICKY
+            }
+            SpinUsWidget.ACTION_NEXT -> {
+                if (p != null && p.hasNextMediaItem()) p.seekToNextMediaItem()
+                return START_NOT_STICKY
+            }
+            SpinUsWidget.ACTION_PREV -> {
+                if (p != null && p.mediaItemCount > 0) p.seekToPrevious()
+                return START_NOT_STICKY
+            }
+        }
+        return super.onStartCommand(intent, flags, startId)
+    }
+
     /** Attached to whichever player is active. */
     private val activeListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            preloadUpcoming()
             // A new track on the active player: its loudness starts over.
             // (During a fade the active player is the outgoing one, whose
             // meter no longer matters.)
@@ -485,7 +538,7 @@ class PlaybackService : MediaLibraryService() {
             }
             if (!token.isNullOrEmpty()) {
                 factory.setDefaultRequestProperties(
-                    mapOf("Authorization" to "MediaBrowser Token=\"$token\"")
+                    mapOf("Authorization" to "Bearer $token")
                 )
             }
             val seconds = withTimeoutOrNull(2000L) {
@@ -505,6 +558,16 @@ class PlaybackService : MediaLibraryService() {
         spare = second
         first.addListener(layoutListener)
         second.addListener(layoutListener)
+        first.addListener(widgetListener)
+        second.addListener(widgetListener)
+        pushWidget()
+        // Friends listening (on the widget): refreshed every 2 minutes while playing.
+        serviceScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(120_000)
+                if (player?.isPlaying == true) SpinUsWidget.refreshFriendsAsync(this@PlaybackService)
+            }
+        }
         mediaSession = MediaLibrarySession.Builder(this, first, sessionCallback)
             .setSessionActivity(
                 android.app.PendingIntent.getActivity(
@@ -518,8 +581,13 @@ class PlaybackService : MediaLibraryService() {
         handler.post(checkRunnable)
     }
 
+    /** Network + on-phone song cache, shared by both players and the pre-loader. */
+    private val cacheFactory by lazy {
+        com.oniel.music.net.MediaCache.dataSourceFactory(this, httpFactory ?: OkHttpDataSource.Factory(NetClients.http))
+    }
+
     private fun buildPlayer(): ExoPlayer {
-        val factory = httpFactory ?: OkHttpDataSource.Factory(NetClients.http)
+        val factory = cacheFactory
         val meter = LevelMeter()
         // Same audio sink as ExoPlayer's default, plus the level meter.
         val renderersFactory = object : DefaultRenderersFactory(this) {
@@ -552,7 +620,58 @@ class PlaybackService : MediaLibraryService() {
         controllerInfo: MediaSession.ControllerInfo
     ): MediaLibrarySession? = mediaSession
 
+    // ---- Pre-loading upcoming songs into the cache (Wi-Fi only) ----
+
+    @Volatile private var preloadGeneration = 0
+    @Volatile private var preloadWriter: androidx.media3.datasource.cache.CacheWriter? = null
+    private val preloadExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** Fetch the next [MediaCache.PRELOAD_COUNT] songs of the queue in the background. */
+    private fun preloadUpcoming() {
+        // Pre-loading is an extra: it must never take playback down.
+        try {
+            preloadUpcomingUnsafe()
+        } catch (e: Exception) {
+            // Ignore; the song still streams normally.
+        }
+    }
+
+    private fun preloadUpcomingUnsafe() {
+        val p = player ?: return
+        val generation = ++preloadGeneration
+        preloadWriter?.cancel()
+        if (!com.oniel.music.net.MediaCache.preloadEnabled(this) ||
+            !com.oniel.music.net.MediaCache.onUnmeteredNetwork(this)
+        ) return
+        val timeline = p.currentTimeline
+        if (timeline.isEmpty) return
+        val uris = ArrayList<android.net.Uri>()
+        val repeatMode = if (p.repeatMode == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else p.repeatMode
+        var index = p.currentMediaItemIndex
+        for (step in 0 until com.oniel.music.net.MediaCache.PRELOAD_COUNT) {
+            if (index == C.INDEX_UNSET || index !in 0 until timeline.windowCount) break
+            index = timeline.getNextWindowIndex(index, repeatMode, p.shuffleModeEnabled)
+            // End of the queue (or looped back to the current song): stop.
+            if (index == C.INDEX_UNSET || index == p.currentMediaItemIndex ||
+                index !in 0 until p.mediaItemCount
+            ) break
+            p.getMediaItemAt(index).localConfiguration?.uri?.let { uris += it }
+        }
+        if (uris.isEmpty()) return
+        val factory = cacheFactory
+        preloadExecutor.execute {
+            com.oniel.music.net.MediaCache.preload(
+                this, factory, uris,
+                onWriter = { preloadWriter = it },
+                isCancelled = { generation != preloadGeneration }
+            )
+        }
+    }
+
     override fun onDestroy() {
+        preloadGeneration++
+        preloadWriter?.cancel()
+        preloadExecutor.shutdownNow()
         serviceScope.cancel()
         handler.removeCallbacks(checkRunnable)
         handler.removeCallbacks(rampRunnable)
@@ -568,7 +687,7 @@ class PlaybackService : MediaLibraryService() {
 
     // --- Crossfade -----------------------------------------------------------
 
-    /** Track length: from the stream when known, else Jellyfin's runtime. */
+    /** Track length: from the stream when known, else the server's runtime. */
     private fun durationOf(p: ExoPlayer): Long {
         val fromMetadata = p.currentMediaItem?.mediaMetadata?.extras
             ?.getLong(EXTRA_RUNTIME_MS, 0L) ?: 0L
@@ -585,9 +704,12 @@ class PlaybackService : MediaLibraryService() {
         if (main.repeatMode == Player.REPEAT_MODE_ONE) return
         val nextIndex = main.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET) return
-        // Same album: play straight through (gapless), no fade.
+        // Same album: play straight through (gapless), unless the
+        // "Crossfade within albums" setting is on.
         val nextItem = try { main.getMediaItemAt(nextIndex) } catch (e: Exception) { return }
-        if (Crossfade.sameAlbum(albumIdOf(main.currentMediaItem), albumIdOf(nextItem))) return
+        if (!Crossfade.fadeWithinAlbums(this) &&
+            Crossfade.sameAlbum(albumIdOf(main.currentMediaItem), albumIdOf(nextItem))
+        ) return
         val duration = durationOf(main)
         // Never fade longer than half the track (short tracks, intros).
         val crossfadeMs = minOf(crossfadeSeconds * 1000L, duration / 2)
@@ -645,6 +767,8 @@ class PlaybackService : MediaLibraryService() {
         outgoing.clearMediaItems()
         outgoing.volume = 1f
         // The ramp keeps running on the incoming player until fadeTotalMs.
+        preloadUpcoming()
+        pushWidget()
     }
 
     /** Fade finished: everything at full volume, nothing pending. */

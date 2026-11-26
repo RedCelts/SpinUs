@@ -60,7 +60,7 @@ import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 import com.oniel.music.R
 import com.oniel.music.data.FriendSession
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.ListeningStats
 import com.oniel.music.data.ListeningSummary
 import com.oniel.music.data.PeriodStats
@@ -73,20 +73,25 @@ import com.oniel.music.data.WeekBar
  */
 @Composable
 fun StatsScreen(
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     onBack: () -> Unit
 ) {
     var summary by remember { mutableStateOf<ListeningSummary?>(null) }
+    var level by remember { mutableStateOf<com.oniel.music.data.Level?>(null) }
     LaunchedEffect(player.historyVersion) {
         summary = try { player.buildListeningSummary() } catch (e: Exception) { null }
+    }
+    LaunchedEffect(player.historyVersion) {
+        level = try { client.getMyLevel() } catch (e: Exception) { level }
     }
     StatsContent(
         title = stringResource(R.string.stats_title),
         summary = summary,
         client = client,
         onBack = onBack,
-        modifier = Modifier.statusBarsPadding()
+        modifier = Modifier.statusBarsPadding(),
+        header = level?.let { lv -> { LevelCard(lv) } }
     )
 }
 
@@ -97,7 +102,7 @@ fun StatsScreen(
 @Composable
 fun FriendStatsDialog(
     friend: FriendSession,
-    client: JellyfinClient,
+    client: SpinUsClient,
     onDismiss: () -> Unit
 ) {
     var summary by remember { mutableStateOf<ListeningSummary?>(null) }
@@ -159,10 +164,12 @@ private enum class StatsPeriod { WEEK, MONTH, ALL }
 fun StatsContent(
     title: String,
     summary: ListeningSummary?,
-    client: JellyfinClient,
+    client: SpinUsClient,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-    loadingText: String? = null
+    loadingText: String? = null,
+    /** Shown above the stats (your level card). */
+    header: (@Composable () -> Unit)? = null
 ) {
     var period by rememberSaveable { mutableStateOf(StatsPeriod.WEEK) }
     Column(modifier = modifier.fillMaxSize()) {
@@ -201,6 +208,7 @@ fun StatsContent(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = bottomChromePadding()),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            if (header != null) item { header() }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(
@@ -342,7 +350,7 @@ private fun HeroPill(text: String) {
 
 /** #1 artist: blurred photo behind, big round photo in front. */
 @Composable
-private fun TopArtistCard(artist: StatItem, client: JellyfinClient) {
+private fun TopArtistCard(artist: StatItem, client: SpinUsClient) {
     val url = artist.imageId?.let { try { client.imageUrl(it, null, 600) } catch (e: Exception) { null } }
     Box(
         modifier = Modifier
@@ -396,7 +404,7 @@ private fun TopArtistCard(artist: StatItem, client: JellyfinClient) {
 }
 
 @Composable
-private fun ArtistTile(rank: Int, artist: StatItem, client: JellyfinClient) {
+private fun ArtistTile(rank: Int, artist: StatItem, client: SpinUsClient) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(92.dp)) {
         Box {
             ArtistPhoto(name = artist.name, imageId = artist.imageId, client = client, size = 84)
@@ -420,7 +428,7 @@ private fun ArtistTile(rank: Int, artist: StatItem, client: JellyfinClient) {
 }
 
 @Composable
-private fun SongStatRow(rank: Int, song: StatItem, client: JellyfinClient) {
+private fun SongStatRow(rank: Int, song: StatItem, client: SpinUsClient) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -485,7 +493,7 @@ private fun RankBadge(rank: Int, modifier: Modifier = Modifier) {
 
 /** Round artist photo; initials underneath show through if there's none. */
 @Composable
-fun ArtistPhoto(name: String, imageId: String?, client: JellyfinClient, size: Int) {
+fun ArtistPhoto(name: String, imageId: String?, client: SpinUsClient, size: Int) {
     Box(modifier = Modifier.size(size.dp).clip(CircleShape)) {
         ListenerAvatar(userName = name, sizeDp = size.dp)
         if (imageId != null) {

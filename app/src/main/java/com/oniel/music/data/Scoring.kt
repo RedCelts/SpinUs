@@ -143,9 +143,8 @@ object Scoring {
      * within the last 90 days, newest first. Albums with no known release
      * date cannot appear.
      *
-     * Caveat: Jellyfin collapses a tagged release date to 1 January of
-     * its year, so an album tagged only with a year (or a date Jellyfin
-     * normalises) appears as a January release.
+     * Caveat: an album tagged only with a year (no month/day) counts as
+     * released on 1 January of that year.
      */
     fun newReleases(albums: List<Album>, nowMs: Long): List<Album> {
         return albums.mapNotNull { album ->

@@ -12,7 +12,7 @@ import java.net.URLEncoder
 
 /**
  * Deezer's public catalog API (no account, no key): used for
- * "Recommended additions" (music NOT in the Jellyfin library) and for the
+ * "Recommended additions" (music NOT in the the server library) and for the
  * main genres + their top songs in Search's "Browse all".
  * https://api.deezer.com — search, related artists, top tracks, albums.
  * Deezer allows ~50 requests / 5 s; calls here are sequential and spaced.

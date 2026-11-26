@@ -21,6 +21,11 @@ import com.oniel.music.ui.OnielMusicApp
 import com.oniel.music.ui.theme.OnielMusicTheme
 
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        com.oniel.music.ui.PendingLinks.take(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Edge to edge with fully transparent status and navigation bars
@@ -35,6 +40,7 @@ class MainActivity : ComponentActivity() {
             window.isStatusBarContrastEnforced = false
         }
         CrashLog.install(this)
+        com.oniel.music.ui.PendingLinks.take(intent)
         // The saved theme, read before the first frame (no flash).
         com.oniel.music.ui.theme.ThemeState.load(this)
         // Debug builds: `am start ... --ez ts_enable true` turns built-in
@@ -47,8 +53,21 @@ class MainActivity : ComponentActivity() {
         // Built-in Tailscale (if the user turned it on), and one HTTP
         // client for images too, so artwork also loads over the tailnet.
         Tailscale.startIfEnabled(this)
+        // Artwork is kept on the phone (memory + 512 MB on disk) and reused
+        // regardless of the server's cache headers: image URLs carry a
+        // content tag, so a changed picture gets a new URL anyway.
         Coil.setImageLoader(
-            ImageLoader.Builder(this).okHttpClient(NetClients.http).build()
+            ImageLoader.Builder(this)
+                .okHttpClient(NetClients.http)
+                .memoryCache { coil.memory.MemoryCache.Builder(this).maxSizePercent(0.25).build() }
+                .diskCache {
+                    coil.disk.DiskCache.Builder()
+                        .directory(cacheDir.resolve("artwork"))
+                        .maxSizeBytes(512L * 1024 * 1024)
+                        .build()
+                }
+                .respectCacheHeaders(false)
+                .build()
         )
         try {
             setContent {
