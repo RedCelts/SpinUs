@@ -81,6 +81,15 @@ async def login(client, name="Oniel", pw="secret1", device="phone-1"):
     return {"Authorization": "Bearer " + body["token"]}, body
 
 
+async def befriend(client, h, other_h, other_id):
+    """Request + accept: the normal way two people become friends."""
+    r = await client.post("/api/friends/request", headers=h, json={"userId": other_id})
+    assert r.status == 200, await r.text()
+    me = (await (await client.get("/api/me", headers=h)).json())["id"]
+    r = await client.post("/api/friends/accept", headers=other_h, json={"userId": me})
+    assert r.status == 200, await r.text()
+
+
 async def j(client, path, h, status=200, method="GET", body=None):
     r = await client.request(method, path, headers=h, json=body)
     assert r.status == status, f"{method} {path}: {r.status} {await r.text()}"
@@ -93,7 +102,7 @@ async def test_auth_and_first_admin(client):
     h, body = await login(client)
     assert body["user"]["isAdmin"] is True and body["sessionId"]
     assert (await client.post("/api/auth/login", json={"username": "Oniel", "password": "nope"})).status == 401
-    await j(client, "/api/users", h, 201, "POST", {"name": "Friend", "password": "pw2"})
+    await j(client, "/api/users", h, 201, "POST", {"name": "Friend", "password": "pw2", "temporary": False})
     fh, fbody = await login(client, "friend", "pw2", "phone-2")  # names are case-insensitive
     assert fbody["user"]["isAdmin"] is False
     await j(client, "/api/users", fh, 403)
@@ -157,7 +166,7 @@ async def test_library(client):
 async def test_user_data(client):
     h, _ = await login(client)
     fh, _ = (None, None)
-    await j(client, "/api/users", h, 201, "POST", {"name": "Friend", "password": "pw2"})
+    await j(client, "/api/users", h, 201, "POST", {"name": "Friend", "password": "pw2", "temporary": False})
     fh, _ = await login(client, "Friend", "pw2", "phone-2")
     tracks = (await j(client, "/api/tracks?sort=album", h))["items"]
     t0, t1 = tracks[0], tracks[1]
@@ -249,16 +258,19 @@ async def test_stream_and_images(client):
 
 async def test_presence(client):
     h, me = await login(client)
-    await j(client, "/api/users", h, 201, "POST", {"name": "Friend", "password": "pw2"})
+    await j(client, "/api/users", h, 201, "POST", {"name": "Friend", "password": "pw2", "temporary": False})
     fh, friend = await login(client, "Friend", "pw2", "phone-2")
     tracks = (await j(client, "/api/tracks", h))["items"]
+    # Not friends yet: nothing is shared.
+    await j(client, "/api/sessions/playing", fh, 204, "POST", {"trackId": tracks[0]["id"], "positionMs": 1000})
+    assert (await j(client, "/api/sessions", h))["items"] == []
+    await befriend(client, h, fh, friend["user"]["id"])
 
     ws_me = await client.ws_connect(f"/api/socket?token={me['token']}")
     hello = json.loads((await ws_me.receive()).data)
     assert hello == {"type": "hello", "sessionId": me["sessionId"]}
     assert (await j(client, "/api/sessions/self", h))["sessionId"] == me["sessionId"]
 
-    assert (await j(client, "/api/sessions", h))["items"] == []
     await j(client, "/api/sessions/playing", fh, 204, "POST", {"trackId": tracks[0]["id"], "positionMs": 1000})
     s = (await j(client, "/api/sessions", h))["items"]
     assert len(s) == 1 and s[0]["userName"] == "Friend" and s[0]["nowPlaying"]["title"] == tracks[0]["title"]
@@ -377,3 +389,130 @@ async def test_fetch_missing_artwork_and_lyrics(aiohttp_client, music, tmp_path)
     assert server.fetcher.run()["found"] == 0 and calls == []
     # The music folder is never written to.
     assert not list(music.rglob("*.none")) and not (music / "fetched").exists()
+
+
+async def test_temporary_password(client):
+    h, _ = await login(client)
+    made = await j(client, "/api/users", h, 201, "POST", {"name": "Ana", "password": "temp1"})
+    assert made["mustChangePassword"] is True
+    ah, body = await login(client, "Ana", "temp1", "ana-phone")
+    assert body["user"]["mustChangePassword"] is True
+    # Nothing works until the password is changed...
+    r = await client.get("/api/albums", headers=ah)
+    assert r.status == 403 and (await r.json())["code"] == "must_change_password"
+    assert (await j(client, "/api/me", ah))["mustChangePassword"] is True
+    # ...and the change needs the current (temporary) password.
+    await j(client, "/api/me/password", ah, 403, "POST", {"currentPassword": "nope", "password": "anasown1"})
+    await j(client, "/api/me/password", ah, 400, "POST", {"currentPassword": "temp1", "password": "short"})
+    await j(client, "/api/me/password", ah, 204, "POST", {"currentPassword": "temp1", "password": "anasown1"})
+    await j(client, "/api/albums", ah)
+    assert (await client.post("/api/auth/login", json={"username": "Ana", "password": "temp1"})).status == 401
+    _, b2 = await login(client, "Ana", "anasown1", "ana-tablet")
+    assert b2["user"]["mustChangePassword"] is False
+    # Admin reset: temporary again, and all her devices are signed out.
+    await j(client, "/api/users/Ana/password", h, 204, "POST", {"password": "reset1"})
+    assert (await client.get("/api/albums", headers=ah)).status == 401
+    _, b3 = await login(client, "Ana", "reset1", "ana-phone")
+    assert b3["user"]["mustChangePassword"] is True
+    users = {u["name"]: u for u in (await j(client, "/api/users", h))["items"]}
+    assert users["Ana"]["mustChangePassword"] is True and users["Oniel"]["mustChangePassword"] is False
+
+
+async def test_recommendations(client):
+    h, me = await login(client)
+    await j(client, "/api/users", h, 201, "POST", {"name": "Friend", "password": "pw2", "temporary": False})
+    fh, friend = await login(client, "Friend", "pw2", "phone-2")
+    assert (await j(client, "/api/friends", h))["items"] == []
+    await befriend(client, h, fh, friend["user"]["id"])
+    friends = (await j(client, "/api/friends", h))["items"]
+    assert friends == [{"id": friend["user"]["id"], "name": "Friend"}]
+    tracks = (await j(client, "/api/tracks?sort=album", h))["items"]
+    album = (await j(client, "/api/albums?sort=name", h))["items"][0]
+
+    ws = await client.ws_connect(f"/api/socket?token={friend['token']}")
+    await ws.receive()  # hello
+    await j(client, "/api/recommendations", h, 201, "POST",
+            {"toUserIds": [friend["user"]["id"]], "itemType": "track", "itemId": tracks[0]["id"], "message": "Listen!"})
+    live = json.loads((await ws.receive()).data)
+    assert live == {"type": "recommendation", "id": live["id"], "from": "Oniel", "unread": 1}
+    await j(client, "/api/recommendations", h, 201, "POST",
+            {"toUserIds": [friend["user"]["id"]], "itemType": "album", "itemId": album["id"]})
+    await ws.close()
+    await j(client, "/api/recommendations", h, 404, "POST",
+            {"toUserIds": [friend["user"]["id"]], "itemType": "album", "itemId": "nope"})
+    await j(client, "/api/recommendations", h, 400, "POST",
+            {"toUserIds": [me["user"]["id"]], "itemType": "album", "itemId": album["id"]})
+
+    assert (await j(client, "/api/recommendations/unread", fh))["count"] == 2
+    inbox = await j(client, "/api/recommendations", fh)
+    assert inbox["unread"] == 2
+    newest, older = inbox["items"]
+    assert newest["itemType"] == "album" and newest["title"] == album["name"] and newest["from"] == "Oniel"
+    assert older["title"] == tracks[0]["title"] and older["message"] == "Listen!" and older["albumId"]
+    assert (await j(client, "/api/recommendations", h))["items"] == []  # sender's inbox is empty
+
+    await j(client, "/api/recommendations/read", fh, 204, "POST", {})
+    assert (await j(client, "/api/recommendations/unread", fh))["count"] == 0
+    await j(client, f"/api/recommendations/{newest['id']}", fh, 204, "DELETE")
+    assert len((await j(client, "/api/recommendations", fh))["items"]) == 1
+
+
+async def test_friend_connections(client):
+    h, me = await login(client)
+    for name in ("Ana", "Beto", "Carla"):
+        await j(client, "/api/users", h, 201, "POST", {"name": name, "password": "pw123456", "temporary": False})
+    ah, ana = await login(client, "Ana", "pw123456", "a")
+    bh, beto = await login(client, "Beto", "pw123456", "b")
+    ch, carla = await login(client, "Carla", "pw123456", "c")
+    aid, bid, cid = ana["user"]["id"], beto["user"]["id"], carla["user"]["id"]
+
+    # Search shows relation; too-short queries return nothing.
+    assert (await j(client, "/api/friends/search?q=b", ah))["items"] == []
+    hits = (await j(client, "/api/friends/search?q=bet", ah))["items"]
+    assert hits == [{"id": bid, "name": "Beto", "relation": None}]
+
+    # Request -> Beto sees it (badge counts it) -> accept.
+    ws = await client.ws_connect(f"/api/socket?token={beto['token']}")
+    await ws.receive()
+    assert (await j(client, "/api/friends/request", ah, 200, "POST", {"userId": bid}))["relation"] == "requested"
+    live = json.loads((await ws.receive()).data)
+    assert live["type"] == "friend-request" and live["from"] == "Ana" and live["unread"] == 1
+    await ws.close()
+    assert (await j(client, "/api/friends/requests", bh))["incoming"] == [{"id": aid, "name": "Ana"}]
+    assert (await j(client, "/api/friends/requests", ah))["outgoing"] == [{"id": bid, "name": "Beto"}]
+    assert (await j(client, "/api/recommendations/unread", bh))["friendRequests"] == 1
+    assert (await j(client, "/api/friends/search?q=bet", ah))["items"][0]["relation"] == "requested"
+    assert (await j(client, "/api/friends", ah))["items"] == []  # pending isn't friends
+    await j(client, "/api/friends/accept", bh, 200, "POST", {"userId": aid})
+    assert (await j(client, "/api/friends", ah))["items"] == [{"id": bid, "name": "Beto"}]
+    assert (await j(client, "/api/friends", bh))["items"] == [{"id": aid, "name": "Ana"}]
+    assert (await j(client, "/api/recommendations/unread", bh))["count"] == 0
+
+    # Asking someone who already asked you = instant friends.
+    await j(client, "/api/friends/request", ch, 200, "POST", {"userId": aid})
+    assert (await j(client, "/api/friends/request", ah, 200, "POST", {"userId": cid}))["relation"] == "friends"
+
+    # Decline / unfriend.
+    await j(client, "/api/friends/remove", ah, 204, "POST", {"userId": cid})
+    assert {f["name"] for f in (await j(client, "/api/friends", ah))["items"]} == {"Beto"}
+
+    # QR code: scanning connects at once; reset kills the old code.
+    code = (await j(client, "/api/friends/code", ch))["code"]
+    assert len(code) == 8 and (await j(client, "/api/friends/code", ch))["code"] == code
+    res = await j(client, "/api/friends/code", bh, 200, "POST", {"code": f"spinus://friend/{code}"})
+    assert res["friend"] == {"id": cid, "name": "Carla"}
+    assert {f["name"] for f in (await j(client, "/api/friends", ch))["items"]} == {"Beto"}
+    await j(client, "/api/friends/code", ch, 400, "POST", {"code": code})
+    new = (await j(client, "/api/friends/code/reset", ch, 200, "POST", {}))["code"]
+    assert new != code
+    await j(client, "/api/friends/code", ah, 404, "POST", {"code": code})
+
+    # Recommendations and messages only go to friends.
+    album = (await j(client, "/api/albums", h))["items"][0]
+    await j(client, "/api/recommendations", ah, 400, "POST", {"toUserIds": [cid], "itemType": "album", "itemId": album["id"]})
+    await j(client, "/api/recommendations", ah, 201, "POST", {"toUserIds": [bid], "itemType": "album", "itemId": album["id"]})
+    cws = await client.ws_connect(f"/api/socket?token={carla['token']}")
+    await cws.receive()
+    assert (await client.post(f"/api/sessions/{carla['sessionId']}/message", headers=ah, json={"text": "x"})).status == 404
+    await j(client, f"/api/sessions/{carla['sessionId']}/message", bh, 204, "POST", {"text": "hi"})
+    await cws.close()

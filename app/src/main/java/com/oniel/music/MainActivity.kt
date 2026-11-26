@@ -21,6 +21,11 @@ import com.oniel.music.ui.OnielMusicApp
 import com.oniel.music.ui.theme.OnielMusicTheme
 
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        com.oniel.music.ui.PendingLinks.take(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Edge to edge with fully transparent status and navigation bars
@@ -35,6 +40,7 @@ class MainActivity : ComponentActivity() {
             window.isStatusBarContrastEnforced = false
         }
         CrashLog.install(this)
+        com.oniel.music.ui.PendingLinks.take(intent)
         // The saved theme, read before the first frame (no flash).
         com.oniel.music.ui.theme.ThemeState.load(this)
         // Debug builds: `am start ... --ez ts_enable true` turns built-in

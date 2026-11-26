@@ -90,7 +90,34 @@ data class AuthResult(
     val token: String,
     val userId: String,
     val userName: String,
-    val isAdmin: Boolean
+    val isAdmin: Boolean,
+    /** Signed in with a temporary password: must set their own before anything else. */
+    val mustChangePassword: Boolean = false
+)
+
+/** A friend (someone you connected with), or a person in a friend request. */
+data class Friend(val id: String, val name: String)
+
+/** A search hit when adding a friend. [relation]: null, "friends", "requested" (you asked) or "incoming". */
+data class PersonHit(val id: String, val name: String, val relation: String?)
+
+data class FriendRequests(val incoming: List<Friend>, val outgoing: List<Friend>)
+
+/** Something a friend recommended to you. [itemType] is "track", "album" or "artist". */
+data class Recommendation(
+    val id: String,
+    val from: String,
+    val itemType: String,
+    val itemId: String,
+    val title: String,
+    val subtitle: String?,
+    val message: String?,
+    val imageId: String,
+    val imageTag: String?,
+    val albumId: String?,
+    val artistId: String?,
+    val read: Boolean,
+    val sentAt: String
 )
 
 /** One week's listening, built only from the on-device play log. */

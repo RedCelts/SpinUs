@@ -44,6 +44,15 @@
     <p class="err" id="loginErr"></p>
   </section>
 
+  <section class="card" id="mustChange" hidden>
+    <h2>Set your own password</h2>
+    <p class="sub" style="margin:0 0 12px">You signed in with a temporary password. Pick your own to continue.</p>
+    <input id="mcCur" type="password" placeholder="Temporary password" autocomplete="current-password">
+    <input id="mcNew" type="password" placeholder="New password (6+ characters)" autocomplete="new-password">
+    <button id="mcGo">Save password</button>
+    <p class="err" id="mcErr"></p>
+  </section>
+
   <div id="app" hidden>
     <section class="card">
       <h2>Library</h2>
@@ -62,17 +71,19 @@
       <div style="margin-top:14px">
         <input id="nu" placeholder="New username">
         <div class="row">
-          <input id="np" type="password" placeholder="Password">
+          <input id="np" type="password" placeholder="Temporary password">
           <label class="chk"><input type="checkbox" id="na"> Admin</label>
           <button id="add">Add</button>
         </div>
+        <p class="sub" style="margin:6px 0 0;font-size:13px">They sign in with this once, then must choose their own.</p>
         <p class="err" id="userErr"></p>
       </div>
     </section>
 
     <section class="card">
       <h2>My password</h2>
-      <div class="row"><input id="mp" type="password" placeholder="New password"><button id="setpw">Change</button></div>
+      <input id="mpCur" type="password" placeholder="Current password" autocomplete="current-password">
+      <div class="row"><input id="mp" type="password" placeholder="New password (6+ characters)" autocomplete="new-password"><button id="setpw">Change</button></div>
       <p class="err" id="pwErr"></p>
     </section>
 
@@ -101,7 +112,9 @@ function signOut() {
 
 async function load() {
   const me = await api("/api/me");
-  $("login").hidden = true; $("app").hidden = false;
+  $("login").hidden = true;
+  if (me.mustChangePassword) { $("mustChange").hidden = false; $("app").hidden = true; return; }
+  $("mustChange").hidden = true; $("app").hidden = false;
   $("sub").textContent = "Signed in as " + me.name + (me.isAdmin ? " (admin)" : "");
   $("usersCard").hidden = !me.isAdmin; $("scan").hidden = !me.isAdmin;
   const st = await api("/api/library/status");
@@ -119,11 +132,22 @@ async function load() {
       const name = document.createElement("span");
       name.textContent = u.name;
       if (u.isAdmin) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "admin"; name.append(t); }
+      if (u.mustChangePassword) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "temporary password"; name.append(t); }
       li.append(name);
       if (u.name.toLowerCase() !== me.name.toLowerCase()) {
+        const wrap = document.createElement("span");
+        const rs = document.createElement("button"); rs.className = "ghost"; rs.textContent = "Reset password"; rs.style.marginRight = "6px";
+        rs.onclick = async () => {
+          const pw = prompt("New temporary password for " + u.name + ":");
+          if (!pw) return;
+          try { await api("/api/users/" + encodeURIComponent(u.name) + "/password", { method: "POST", body: JSON.stringify({ password: pw }) }); load(); }
+          catch (e) { alert(e.message); }
+        };
+        wrap.append(rs);
         const b = document.createElement("button"); b.className = "ghost"; b.textContent = "Remove";
         b.onclick = async () => { if (confirm("Remove " + u.name + "?")) { await api("/api/users/" + encodeURIComponent(u.name), { method: "DELETE" }); load(); } };
-        li.append(b);
+        wrap.append(b);
+        li.append(wrap);
       }
       $("users").append(li);
     }
@@ -149,8 +173,13 @@ $("add").onclick = async () => {
   catch (e) { $("userErr").textContent = e.message; }
 };
 $("setpw").onclick = async () => {
-  try { await api("/api/me/password", { method: "POST", body: JSON.stringify({ password: $("mp").value }) }); $("mp").value = ""; $("pwErr").textContent = "Password changed."; }
+  try { await api("/api/me/password", { method: "POST", body: JSON.stringify({ currentPassword: $("mpCur").value, password: $("mp").value }) }); $("mp").value = $("mpCur").value = ""; $("pwErr").textContent = "Password changed. Your other devices were signed out."; }
   catch (e) { $("pwErr").textContent = e.message; }
+};
+$("mcGo").onclick = async () => {
+  $("mcErr").textContent = "";
+  try { await api("/api/me/password", { method: "POST", body: JSON.stringify({ currentPassword: $("mcCur").value, password: $("mcNew").value }) }); load(); }
+  catch (e) { $("mcErr").textContent = e.message; }
 };
 $("out").onclick = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch (e) {} signOut(); };
 if (token) load().catch(signOut);

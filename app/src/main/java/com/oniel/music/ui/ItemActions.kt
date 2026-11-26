@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -106,7 +107,7 @@ private suspend fun ActionTarget.trackIds(client: SpinUsClient): List<String> = 
 
 /**
  * ⋮ button for a song, album or artist row: Add to / Remove from
- * favorites, Add to playlist, New playlist.
+ * favorites, Add to playlist, New playlist, Recommend to a friend.
  */
 @Composable
 fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
@@ -117,6 +118,7 @@ fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
     var favorite by remember(target) { mutableStateOf<Boolean?>(null) }
     var playlistDialog by remember { mutableStateOf(false) }
     var startWithNew by remember { mutableStateOf(false) }
+    var recommendDialog by remember { mutableStateOf(false) }
 
     // Look up the favorite state when the menu opens (fast for songs
     // from library lists: their flag is already known).
@@ -196,7 +198,16 @@ fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
                 leadingIcon = { Icon(Icons.Filled.Create, contentDescription = null) },
                 onClick = { open = false; startWithNew = true; playlistDialog = true }
             )
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.rec_friend_action)) },
+                leadingIcon = { Icon(androidx.compose.material.icons.Icons.Filled.Share, contentDescription = null) },
+                onClick = { open = false; recommendDialog = true }
+            )
         }
+    }
+
+    if (recommendDialog) {
+        RecommendDialog(client = client, target = target, onDismiss = { recommendDialog = false })
     }
 
     if (playlistDialog) {

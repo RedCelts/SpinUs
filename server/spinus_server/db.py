@@ -64,6 +64,24 @@ CREATE TABLE IF NOT EXISTS prefs (
   value TEXT NOT NULL,
   PRIMARY KEY (user_id, key)
 );
+CREATE TABLE IF NOT EXISTS recommendations (
+  id TEXT PRIMARY KEY,
+  from_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  item_type TEXT NOT NULL,
+  item_id TEXT NOT NULL,
+  message TEXT,
+  created REAL NOT NULL,
+  read_at REAL
+);
+CREATE INDEX IF NOT EXISTS rec_to ON recommendations(to_user, created);
+CREATE TABLE IF NOT EXISTS friendships (
+  requester TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  addressee TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,              -- 'pending' or 'accepted'
+  created REAL NOT NULL,
+  PRIMARY KEY (requester, addressee)
+);
 CREATE TABLE IF NOT EXISTS scan_cache (
   rel_path TEXT PRIMARY KEY,
   mtime_ns INTEGER NOT NULL,
@@ -86,6 +104,14 @@ class Database:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        cols = {r[1] for r in self.conn.execute("PRAGMA table_info(users)")}
+        if "must_change" not in cols:
+            # Accounts made by an admin carry a temporary password until
+            # their owner sets one.
+            self.conn.execute("ALTER TABLE users ADD COLUMN must_change INTEGER NOT NULL DEFAULT 0")
+        if "friend_code" not in cols:
+            # Shown as a QR code: scanning it connects two people at once.
+            self.conn.execute("ALTER TABLE users ADD COLUMN friend_code TEXT")
         self.lock = threading.RLock()
 
     def q(self, sql: str, args=()) -> list[sqlite3.Row]:
@@ -101,30 +127,34 @@ class Database:
     def user_count(self) -> int:
         return self.q("SELECT COUNT(*) c FROM users")[0]["c"]
 
-    def create_user(self, name: str, password: str, is_admin: bool = False) -> dict:
+    def create_user(self, name: str, password: str, is_admin: bool = False, temporary: bool = False) -> dict:
         name = name.strip()
         if not name or not password:
             raise ValueError("name and password are required")
         salt = secrets.token_hex(16)
         uid = secrets.token_hex(16)
         try:
-            self.x("INSERT INTO users VALUES (?,?,?,?,?,?)",
-                   (uid, name, hash_password(password, salt), salt, int(is_admin), time.time()))
+            self.x("INSERT INTO users (id, name, pw_hash, salt, is_admin, created, must_change) VALUES (?,?,?,?,?,?,?)",
+                   (uid, name, hash_password(password, salt), salt, int(is_admin), time.time(), int(temporary)))
         except sqlite3.IntegrityError:
             raise ValueError(f"user {name!r} already exists")
-        return {"id": uid, "name": name, "isAdmin": is_admin}
+        return {"id": uid, "name": name, "isAdmin": is_admin, "mustChangePassword": temporary}
 
-    def set_password(self, name: str, password: str) -> bool:
+    def set_password(self, name: str, password: str, temporary: bool = False) -> bool:
         salt = secrets.token_hex(16)
-        return self.x("UPDATE users SET pw_hash=?, salt=? WHERE name=?",
-                      (hash_password(password, salt), salt, name)) > 0
+        return self.x("UPDATE users SET pw_hash=?, salt=?, must_change=? WHERE name=?",
+                      (hash_password(password, salt), salt, int(temporary), name)) > 0
+
+    def revoke_other_tokens(self, user_id: str, keep_token: str):
+        self.x("DELETE FROM tokens WHERE user_id=? AND token<>?", (user_id, keep_token))
 
     def delete_user(self, name: str) -> bool:
         return self.x("DELETE FROM users WHERE name=?", (name,)) > 0
 
     def list_users(self) -> list[dict]:
-        return [{"id": r["id"], "name": r["name"], "isAdmin": bool(r["is_admin"])}
-                for r in self.q("SELECT * FROM users ORDER BY name")]
+        return [{"id": r["id"], "name": r["name"], "isAdmin": bool(r["is_admin"]),
+                 "mustChangePassword": bool(r["must_change"])}
+                for r in self.q("SELECT * FROM users ORDER BY name COLLATE NOCASE")]
 
     def check_login(self, name: str, password: str) -> dict | None:
         rows = self.q("SELECT * FROM users WHERE name=?", (name.strip(),))
@@ -134,7 +164,8 @@ class Database:
         r = rows[0]
         if not hmac.compare_digest(r["pw_hash"], hash_password(password, r["salt"])):
             return None
-        return {"id": r["id"], "name": r["name"], "isAdmin": bool(r["is_admin"])}
+        return {"id": r["id"], "name": r["name"], "isAdmin": bool(r["is_admin"]),
+                "mustChangePassword": bool(r["must_change"])}
 
     # ---- tokens (one per signed-in device; the token row is the "session")
 
@@ -149,7 +180,7 @@ class Database:
         return token, session_id
 
     def token_info(self, token: str) -> dict | None:
-        rows = self.q("""SELECT t.*, u.name user_name, u.is_admin FROM tokens t
+        rows = self.q("""SELECT t.*, u.name user_name, u.is_admin, u.must_change FROM tokens t
                          JOIN users u ON u.id=t.user_id WHERE t.token=?""", (token,))
         if not rows:
             return None
@@ -239,6 +270,120 @@ class Database:
 
     def put_pref(self, user_id: str, key: str, value: dict):
         self.x("INSERT OR REPLACE INTO prefs VALUES (?,?,?)", (user_id, key, json.dumps(value)))
+
+    # ---- friends (mutual: a request, then an accept; or a scanned QR code)
+
+    def user_name(self, user_id: str) -> str | None:
+        rows = self.q("SELECT name FROM users WHERE id=?", (user_id,))
+        return rows[0]["name"] if rows else None
+
+    def friend_ids(self, user_id: str) -> set[str]:
+        rows = self.q("""SELECT addressee o FROM friendships WHERE requester=? AND status='accepted'
+                         UNION SELECT requester o FROM friendships WHERE addressee=? AND status='accepted'""",
+                      (user_id, user_id))
+        return {r["o"] for r in rows}
+
+    def friends(self, user_id: str) -> list[dict]:
+        ids = self.friend_ids(user_id)
+        return [u for u in self.list_users() if u["id"] in ids]
+
+    def relation(self, me: str, other: str) -> str | None:
+        """'friends', 'requested' (I asked them), 'incoming' (they asked me) or None."""
+        rows = self.q("SELECT * FROM friendships WHERE (requester=? AND addressee=?) OR (requester=? AND addressee=?)",
+                      (me, other, other, me))
+        for r in rows:
+            if r["status"] == "accepted":
+                return "friends"
+        for r in rows:
+            return "requested" if r["requester"] == me else "incoming"
+        return None
+
+    def friend_requests(self, user_id: str) -> dict:
+        def users(sql):
+            return [{"id": r["id"], "name": r["name"]} for r in self.q(sql, (user_id,))]
+        return {
+            "incoming": users("""SELECT u.id, u.name FROM friendships f JOIN users u ON u.id=f.requester
+                                 WHERE f.addressee=? AND f.status='pending' ORDER BY f.created DESC"""),
+            "outgoing": users("""SELECT u.id, u.name FROM friendships f JOIN users u ON u.id=f.addressee
+                                 WHERE f.requester=? AND f.status='pending' ORDER BY f.created DESC"""),
+        }
+
+    def incoming_request_count(self, user_id: str) -> int:
+        return self.q("SELECT COUNT(*) c FROM friendships WHERE addressee=? AND status='pending'", (user_id,))[0]["c"]
+
+    def request_friend(self, me: str, other: str) -> str:
+        """Ask [other]; if they already asked me, that makes us friends. Returns the new relation."""
+        rel = self.relation(me, other)
+        if rel == "incoming":
+            return self.befriend(me, other)
+        if rel is None:
+            self.x("INSERT INTO friendships VALUES (?,?,'pending',?)", (me, other, time.time()))
+            return "requested"
+        return rel
+
+    def accept_friend(self, me: str, other: str) -> bool:
+        return self.x("UPDATE friendships SET status='accepted' WHERE requester=? AND addressee=? AND status='pending'",
+                      (other, me)) > 0
+
+    def befriend(self, a: str, b: str) -> str:
+        with self.lock:
+            self.conn.execute("DELETE FROM friendships WHERE (requester=? AND addressee=?) OR (requester=? AND addressee=?)",
+                              (a, b, b, a))
+            self.conn.execute("INSERT INTO friendships VALUES (?,?,'accepted',?)", (a, b, time.time()))
+        return "friends"
+
+    def remove_friend(self, me: str, other: str) -> bool:
+        """Unfriend, cancel my request, or decline theirs."""
+        return self.x("DELETE FROM friendships WHERE (requester=? AND addressee=?) OR (requester=? AND addressee=?)",
+                      (me, other, other, me)) > 0
+
+    def search_users(self, me: str, q: str, limit: int = 20) -> list[dict]:
+        rows = self.q("SELECT id, name FROM users WHERE id<>? AND name LIKE ? ORDER BY name COLLATE NOCASE LIMIT ?",
+                      (me, f"%{q.strip()}%", limit))
+        return [{"id": r["id"], "name": r["name"], "relation": self.relation(me, r["id"])} for r in rows]
+
+    def friend_code(self, user_id: str, reset: bool = False) -> str:
+        rows = self.q("SELECT friend_code FROM users WHERE id=?", (user_id,))
+        code = rows[0]["friend_code"] if rows else None
+        if code and not reset:
+            return code
+        alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O, 1/I
+        code = "".join(secrets.choice(alphabet) for _ in range(8))
+        self.x("UPDATE users SET friend_code=? WHERE id=?", (code, user_id))
+        return code
+
+    def user_by_code(self, code: str) -> str | None:
+        rows = self.q("SELECT id FROM users WHERE friend_code=?", (code.strip().upper(),))
+        return rows[0]["id"] if rows else None
+
+    # ---- recommendations
+
+    def add_recommendation(self, from_user: str, to_user: str, item_type: str, item_id: str,
+                           message: str | None) -> str:
+        rid = secrets.token_hex(12)
+        self.x("INSERT INTO recommendations VALUES (?,?,?,?,?,?,?,NULL)",
+               (rid, from_user, to_user, item_type, item_id, message, time.time()))
+        return rid
+
+    def recommendations(self, user_id: str, limit: int = 100) -> list[dict]:
+        return [dict(r) for r in self.q(
+            """SELECT r.*, u.name from_name FROM recommendations r JOIN users u ON u.id=r.from_user
+               WHERE r.to_user=? ORDER BY r.created DESC LIMIT ?""", (user_id, limit))]
+
+    def unread_recommendations(self, user_id: str) -> int:
+        return self.q("SELECT COUNT(*) c FROM recommendations WHERE to_user=? AND read_at IS NULL",
+                      (user_id,))[0]["c"]
+
+    def mark_recommendations_read(self, user_id: str, ids: list[str] | None = None):
+        if ids is None:
+            self.x("UPDATE recommendations SET read_at=? WHERE to_user=? AND read_at IS NULL", (time.time(), user_id))
+        else:
+            for rid in ids:
+                self.x("UPDATE recommendations SET read_at=? WHERE to_user=? AND id=? AND read_at IS NULL",
+                       (time.time(), user_id, rid))
+
+    def delete_recommendation(self, user_id: str, rid: str) -> bool:
+        return self.x("DELETE FROM recommendations WHERE to_user=? AND id=?", (user_id, rid)) > 0
 
     # ---- scan cache
 

@@ -144,7 +144,47 @@ fun OnielMusicApp() {
                 android.widget.Toast.makeText(context.applicationContext, label, android.widget.Toast.LENGTH_SHORT).show()
             }
         }
-        onDispose { client.onMessage = null }
+        // Recommendations and friend requests: badge + a short note.
+        client.onInbox = { kind, from, unread ->
+            main.post {
+                Inbox.unread = unread
+                Inbox.version++
+                val res = when (kind) {
+                    "recommendation" -> R.string.inbox_toast_rec
+                    "friend-request" -> R.string.inbox_toast_request
+                    else -> R.string.inbox_toast_accepted
+                }
+                android.widget.Toast.makeText(
+                    context.applicationContext, context.getString(res, from), android.widget.Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
+        onDispose { client.onMessage = null; client.onInbox = null }
+    }
+
+    // Badge count: on sign-in and every minute while the app is open
+    // (covers anything that arrived while the socket was down).
+    LaunchedEffect(auth) {
+        if (auth == null) { Inbox.unread = 0; return@LaunchedEffect }
+        while (true) {
+            try { Inbox.unread = client.unreadRecommendations() } catch (e: Exception) { }
+            kotlinx.coroutines.delay(60_000)
+        }
+    }
+
+    // Opened from a friend's QR code (spinus://friend/<code>): connect.
+    val pendingCode = PendingLinks.friendCode
+    LaunchedEffect(pendingCode, auth) {
+        val code = pendingCode ?: return@LaunchedEffect
+        if (auth == null) return@LaunchedEffect // used right after sign-in
+        PendingLinks.friendCode = null
+        val msg = try {
+            context.getString(R.string.friend_added, client.useFriendCode(code))
+        } catch (e: Exception) {
+            context.getString(R.string.friend_code_bad)
+        }
+        Inbox.version++
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
     }
 
     // Listening history follows the account: sync on start / sign-in.
@@ -459,7 +499,10 @@ fun OnielMusicApp() {
         FriendsSheet(
             client = client,
             myUserId = savedAuth.userId,
-            onDismiss = { showFriends = false }
+            onDismiss = { showFriends = false },
+            onOpenAlbum = { id -> showFriends = false; navController.navigate(Routes.album(id)) },
+            onOpenArtist = { id, name -> showFriends = false; openArtist(id, name) },
+            onPlayTrack = { track -> player.playSingle(track); showFriends = false; navController.navigate(Routes.PLAYER) }
         )
     }
 }

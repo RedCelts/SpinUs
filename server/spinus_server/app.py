@@ -34,6 +34,8 @@ MIME = {
     ".opus": "audio/ogg", ".wav": "audio/wav", ".webm": "audio/webm",
 }
 PUBLIC = {"/", "/api/info", "/api/auth/login", "/favicon.ico"}
+# All a signed-in user can do while their password is still the temporary one.
+TEMP_PASSWORD_OK = {"/api/me", "/api/me/password", "/api/auth/logout"}
 
 
 def _compact(obj) -> str:
@@ -144,6 +146,21 @@ class SpinUs:
         r.add_get("/api/users", self.users)
         r.add_post("/api/users", self.add_user)
         r.add_delete("/api/users/{name}", self.remove_user)
+        r.add_post("/api/users/{name}/password", self.reset_password)
+        r.add_get("/api/friends", self.friends)
+        r.add_get("/api/friends/requests", self.friend_requests)
+        r.add_get("/api/friends/search", self.search_people)
+        r.add_post("/api/friends/request", self.request_friend)
+        r.add_post("/api/friends/accept", self.accept_friend)
+        r.add_post("/api/friends/remove", self.remove_friend)
+        r.add_get("/api/friends/code", self.my_friend_code)
+        r.add_post("/api/friends/code/reset", self.reset_friend_code)
+        r.add_post("/api/friends/code", self.use_friend_code)
+        r.add_get("/api/recommendations", self.recommendations)
+        r.add_post("/api/recommendations", self.recommend)
+        r.add_get("/api/recommendations/unread", self.unread_recommendations)
+        r.add_post("/api/recommendations/read", self.read_recommendations)
+        r.add_delete("/api/recommendations/{id}", self.delete_recommendation)
         r.add_get("/api/library/status", self.library_status)
         r.add_post("/api/library/scan", self.library_scan)
 
@@ -241,6 +258,8 @@ class SpinUs:
         info = self.db.token_info(token) if token else None
         if info is None:
             return json_response({"error": "not signed in"}, status=401)
+        if info.get("must_change") and request.path not in TEMP_PASSWORD_OK:
+            return json_response({"error": "set a new password first", "code": "must_change_password"}, status=403)
         request["auth"] = info
         request["token"] = token
         return await handler(request)
@@ -288,13 +307,39 @@ class SpinUs:
     async def me(self, request):
         a = request["auth"]
         return json_response({"id": a["user_id"], "name": a["user_name"], "isAdmin": bool(a["is_admin"]),
-                                  "sessionId": a["session_id"]})
+                              "sessionId": a["session_id"], "mustChangePassword": bool(a["must_change"])})
 
     async def change_password(self, request):
+        """Set your own password. The current one is required (it is the
+        temporary one on a first sign-in). Signs out your other devices."""
         body = await request.json()
-        if not body.get("password"):
-            return json_response({"error": "password required"}, status=400)
-        self.db.set_password(request["auth"]["user_name"], body["password"])
+        a = request["auth"]
+        new = str(body.get("password", ""))
+        current = str(body.get("currentPassword", ""))
+        if len(new) < 6:
+            return json_response({"error": "the new password needs at least 6 characters"}, status=400)
+        loop = asyncio.get_running_loop()
+        if await loop.run_in_executor(None, self.db.check_login, a["user_name"], current) is None:
+            return json_response({"error": "the current password is wrong"}, status=403)
+        if new == current:
+            return json_response({"error": "pick a password different from the current one"}, status=400)
+        await loop.run_in_executor(None, self.db.set_password, a["user_name"], new)
+        self.db.revoke_other_tokens(a["user_id"], request["token"])
+        return web.Response(status=204)
+
+    async def reset_password(self, request):
+        """Admin: give someone a new temporary password (they must change it)."""
+        self.require_admin(request)
+        body = await request.json()
+        pw = str(body.get("password", ""))
+        if len(pw) < 4:
+            return json_response({"error": "password too short"}, status=400)
+        name = request.match_info["name"]
+        if not self.db.set_password(name, pw, temporary=True):
+            raise web.HTTPNotFound()
+        rows = self.db.q("SELECT id FROM users WHERE name=?", (name,))
+        if rows:
+            self.db.revoke_other_tokens(rows[0]["id"], "")
         return web.Response(status=204)
 
     async def users(self, request):
@@ -306,7 +351,8 @@ class SpinUs:
         body = await request.json()
         try:
             user = self.db.create_user(str(body.get("name", "")), str(body.get("password", "")),
-                                       bool(body.get("isAdmin", False)))
+                                       bool(body.get("isAdmin", False)),
+                                       temporary=bool(body.get("temporary", True)))
         except ValueError as e:
             return json_response({"error": str(e)}, status=400)
         return json_response(user, status=201)
@@ -385,6 +431,149 @@ class SpinUs:
     def ids_param(request, key) -> list[str]:
         v = request.query.get(key, "")
         return [x for x in v.split(",") if x]
+
+    # ---- friends & recommendations
+
+    async def friends(self, request):
+        """Your friends (people you connected with), A to Z."""
+        return json_response({"items": [{"id": u["id"], "name": u["name"]}
+                                        for u in self.db.friends(self.uid(request))]})
+
+    async def friend_requests(self, request):
+        return json_response(self.db.friend_requests(self.uid(request)))
+
+    async def search_people(self, request):
+        q = request.query.get("q", "").strip()
+        if len(q) < 2:
+            return json_response({"items": []})
+        return json_response({"items": self.db.search_users(self.uid(request), q)})
+
+    async def _notify_friends_change(self, user_id: str, kind: str, from_name: str):
+        """Live badge update for [user_id]: friend requests count toward it."""
+        payload = {"type": kind, "from": from_name, "unread": self.unread_total(user_id)}
+        for s in list(self.presence.sessions.values()):
+            if s.user_id == user_id:
+                await self.presence.send(s.id, payload)
+
+    def unread_total(self, user_id: str) -> int:
+        return self.db.unread_recommendations(user_id) + self.db.incoming_request_count(user_id)
+
+    async def _other(self, request) -> str:
+        body = await request.json()
+        other = str(body.get("userId", ""))
+        if other == self.uid(request) or self.db.user_name(other) is None:
+            raise web.HTTPNotFound()
+        return other
+
+    async def request_friend(self, request):
+        other = await self._other(request)
+        me = request["auth"]
+        relation = self.db.request_friend(me["user_id"], other)
+        await self._notify_friends_change(other, "friend-request" if relation == "requested" else "friend-accepted",
+                                          me["user_name"])
+        return json_response({"relation": relation})
+
+    async def accept_friend(self, request):
+        other = await self._other(request)
+        me = request["auth"]
+        if not self.db.accept_friend(me["user_id"], other):
+            raise web.HTTPNotFound()
+        await self._notify_friends_change(other, "friend-accepted", me["user_name"])
+        return json_response({"relation": "friends"})
+
+    async def remove_friend(self, request):
+        other = await self._other(request)
+        self.db.remove_friend(self.uid(request), other)
+        return web.Response(status=204)
+
+    async def my_friend_code(self, request):
+        code = self.db.friend_code(self.uid(request))
+        return json_response({"code": code, "link": f"spinus://friend/{code}"})
+
+    async def reset_friend_code(self, request):
+        code = self.db.friend_code(self.uid(request), reset=True)
+        return json_response({"code": code, "link": f"spinus://friend/{code}"})
+
+    async def use_friend_code(self, request):
+        """Scanned someone's QR code: you're friends straight away."""
+        body = await request.json()
+        raw = str(body.get("code", "")).strip()
+        code = raw.rsplit("/", 1)[-1]  # accepts the code or the spinus://friend/<code> link
+        other = self.db.user_by_code(code) if code else None
+        me = request["auth"]
+        if other is None:
+            return json_response({"error": "that code isn't valid (it may have been reset)"}, status=404)
+        if other == me["user_id"]:
+            return json_response({"error": "that's your own code"}, status=400)
+        self.db.befriend(me["user_id"], other)
+        await self._notify_friends_change(other, "friend-accepted", me["user_name"])
+        return json_response({"relation": "friends", "friend": {"id": other, "name": self.db.user_name(other)}})
+
+    def rec_item(self, item_type: str, item_id: str) -> dict | None:
+        idx = self.library.index
+        if item_type == "track" and (t := idx.tracks.get(item_id)):
+            alb = idx.albums.get(t.album_id) if t.album_id else None
+            return {"title": t.title, "subtitle": ", ".join(t.artists) or t.album_artist,
+                    "imageId": t.album_id or t.id, "imageTag": alb.image_tag if alb else t.image_tag,
+                    "albumId": t.album_id, "artistId": t.album_artist_id}
+        if item_type == "album" and (a := idx.albums.get(item_id)):
+            return {"title": a.name, "subtitle": a.artist, "imageId": a.id, "imageTag": a.image_tag,
+                    "albumId": a.id, "artistId": a.artist_id}
+        if item_type == "artist" and (art := idx.artists.get(item_id)):
+            return {"title": art.name, "subtitle": None, "imageId": art.id, "imageTag": art.image_tag,
+                    "albumId": None, "artistId": art.id}
+        return None
+
+    async def recommend(self, request):
+        body = await request.json()
+        item_type, item_id = body.get("itemType"), body.get("itemId")
+        if item_type not in ("track", "album", "artist") or self.rec_item(item_type, item_id) is None:
+            return json_response({"error": "unknown item"}, status=404)
+        me = request["auth"]
+        friends = self.db.friend_ids(me["user_id"])
+        to = [u for u in body.get("toUserIds", []) if u in friends]
+        if not to:
+            return json_response({"error": "pick at least one friend"}, status=400)
+        message = (str(body.get("message") or "").strip() or None)
+        if message:
+            message = message[:300]
+        for uid in to:
+            rid = self.db.add_recommendation(me["user_id"], uid, item_type, item_id, message)
+            # Live badge update on any of their phones that are open.
+            payload = {"type": "recommendation", "id": rid, "from": me["user_name"],
+                       "unread": self.unread_total(uid)}
+            for s in list(self.presence.sessions.values()):
+                if s.user_id == uid:
+                    await self.presence.send(s.id, payload)
+        return json_response({"sent": len(to)}, status=201)
+
+    async def recommendations(self, request):
+        out = []
+        for r in self.db.recommendations(self.uid(request)):
+            item = self.rec_item(r["item_type"], r["item_id"])
+            if item is None:
+                continue  # no longer in the library
+            out.append({"id": r["id"], "from": r["from_name"], "itemType": r["item_type"],
+                        "itemId": r["item_id"], "message": r["message"], "read": r["read_at"] is not None,
+                        "sentAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(r["created"])), **item})
+        return json_response({"items": out, "unread": sum(1 for o in out if not o["read"])})
+
+    async def unread_recommendations(self, request):
+        """Badge count: unread recommendations + friend requests waiting for you."""
+        uid = self.uid(request)
+        recs, reqs = self.db.unread_recommendations(uid), self.db.incoming_request_count(uid)
+        return json_response({"count": recs + reqs, "recommendations": recs, "friendRequests": reqs})
+
+    async def read_recommendations(self, request):
+        body = await request.json() if request.can_read_body else {}
+        ids = body.get("ids") if isinstance(body, dict) else None
+        self.db.mark_recommendations_read(self.uid(request), ids if isinstance(ids, list) else None)
+        return web.Response(status=204)
+
+    async def delete_recommendation(self, request):
+        if not self.db.delete_recommendation(self.uid(request), request.match_info["id"]):
+            raise web.HTTPNotFound()
+        return web.Response(status=204)
 
     # ---- library reads
 
@@ -876,6 +1065,7 @@ class SpinUs:
     async def sessions(self, request):
         idx = self.library.index
         me = self.uid(request)
+        friends = self.db.friend_ids(me)
         now = time.time()
         out = []
         for s in list(self.presence.sessions.values()):
@@ -890,8 +1080,11 @@ class SpinUs:
             # its song would have ended.
             if pos > t.duration_ms + 60_000:
                 continue
-            if request.query.get("includeSelf") != "true" and s.user_id == me:
-                continue
+            if s.user_id == me:
+                if request.query.get("includeSelf") != "true":
+                    continue
+            elif s.user_id not in friends:
+                continue  # only friends see what you're playing
             alb = idx.albums.get(t.album_id) if t.album_id else None
             out.append({
                 "sessionId": s.id, "userId": s.user_id, "userName": s.user_name, "client": s.client,
@@ -909,6 +1102,9 @@ class SpinUs:
         payload = {"type": "message", "header": str(body.get("header", "SpinUs")),
                    "text": str(body.get("text", "")), "timeoutMs": int(body.get("timeoutMs", 5000)),
                    "from": {"sessionId": a["session_id"], "userId": a["user_id"], "userName": a["user_name"]}}
+        target = self.presence.sessions.get(request.match_info["id"])
+        if target is None or (target.user_id != a["user_id"] and target.user_id not in self.db.friend_ids(a["user_id"])):
+            raise web.HTTPNotFound()
         if not await self.presence.send(request.match_info["id"], payload):
             raise web.HTTPNotFound()
         return web.Response(status=204)

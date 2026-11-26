@@ -56,6 +56,38 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    // Signed in with a temporary password: (address, result) until a new one is set.
+    var mustChange by remember { mutableStateOf<Pair<String, com.oniel.music.data.AuthResult>?>(null) }
+
+    suspend fun finish(address: String, result: com.oniel.music.data.AuthResult) {
+        // Open the presence socket now, so friends see this user.
+        try {
+            client.connectPresence()
+        } catch (e: Exception) {
+            // Presence is best-effort; sign-in still counts.
+        }
+        authStore.save(
+            serverUrl = address,
+            token = result.token,
+            userId = result.userId,
+            userName = result.userName,
+            isAdmin = result.isAdmin
+        )
+        onLoggedIn(SavedAuth(address, result.token, result.userId, result.userName, result.isAdmin))
+    }
+
+    mustChange?.let { (address, result) ->
+        ChangePasswordDialog(
+            client = client,
+            knownCurrent = password,
+            forced = true,
+            onDone = {
+                mustChange = null
+                scope.launch { finish(address, result.copy(mustChangePassword = false)) }
+            },
+            onDismiss = {}
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -136,30 +168,11 @@ fun LoginScreen(
                 scope.launch {
                     try {
                         val result = client.login(address, username.trim(), password)
-                        // Open the presence socket now: without it the
-                        // server only ever shows this user's own session,
-                        // so friends would look broken.
-                        try {
-                            client.connectPresence()
-                        } catch (e: Exception) {
-                            // Presence is best-effort; sign-in still counts.
+                        if (result.mustChangePassword) {
+                            mustChange = address to result
+                        } else {
+                            finish(address, result)
                         }
-                        authStore.save(
-                            serverUrl = address,
-                            token = result.token,
-                            userId = result.userId,
-                            userName = result.userName,
-                            isAdmin = result.isAdmin
-                        )
-                        onLoggedIn(
-                            SavedAuth(
-                                serverUrl = address,
-                                token = result.token,
-                                userId = result.userId,
-                                userName = result.userName,
-                                isAdmin = result.isAdmin
-                            )
-                        )
                     } catch (e: Exception) {
                         val msg = e.message.orEmpty()
                         error = when {

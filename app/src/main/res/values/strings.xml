@@ -105,8 +105,8 @@
 
     <!-- Friends -->
     <string name="friends_title">Friends</string>
-    <string name="friends_subtitle">Who on your server is listening to music right now</string>
-    <string name="friends_none">Nobody is listening to music right now.</string>
+    <string name="friends_subtitle">Tap someone to send a reaction.</string>
+    <string name="friends_none">None of your friends are listening right now.</string>
     <string name="emoji_title">Send a reaction to %1$s</string>
 
     <!-- Library -->
@@ -207,7 +207,7 @@
     <string name="retry">Try again</string>
     <string name="close">Close</string>
     <string name="settings_share_stats">Share my listening stats with friends</string>
-    <string name="settings_share_stats_desc">Friends on this server can open your stats from their Friends list while your app is open.</string>
+    <string name="settings_share_stats_desc">Your friends can open your stats from their Friends list while your app is open.</string>
     <string name="mix_song_count">%1$d songs</string>
     <!-- v2.1.0 cache -->
     <string name="cache_title">Cache</string>
@@ -219,4 +219,55 @@
     <string name="cache_preload_desc">On Wi-Fi, the next 2 songs in your queue download ahead of time.</string>
     <string name="cache_clear">Clear cache</string>
     <string name="cache_clearing">Clearing…</string>
+    <!-- v2.2.0: passwords -->
+    <string name="pw_set_title">Set your password</string>
+    <string name="pw_change_title">Change password</string>
+    <string name="pw_forced_note">You signed in with a temporary password. Choose your own to continue.</string>
+    <string name="pw_current">Current password</string>
+    <string name="pw_new">New password</string>
+    <string name="pw_again">New password again</string>
+    <string name="pw_too_short">Use at least 6 characters.</string>
+    <string name="pw_mismatch">The two new passwords don\'t match.</string>
+    <string name="pw_changed">Password changed. Your other devices were signed out.</string>
+    <string name="pw_save">Save</string>
+    <!-- v2.2.0: recommendations -->
+    <string name="rec_friend_action">Recommend to a friend</string>
+    <string name="rec_friend_title">Recommend to a friend</string>
+    <string name="rec_friend_none">You have no friends on SpinUs yet. Add some from Friends (search or QR code).</string>
+    <string name="rec_friend_note">Add a note (optional)</string>
+    <string name="rec_friend_send">Send</string>
+    <string name="rec_friend_sent">Recommendation sent</string>
+    <string name="rec_from_song">%1$s recommended a song</string>
+    <string name="rec_from_album">%1$s recommended an album</string>
+    <string name="rec_from_artist">%1$s recommended an artist</string>
+    <string name="rec_dismiss">Dismiss</string>
+    <string name="rec_inbox_title">Recommended to you</string>
+    <string name="inbox_toast_rec">%1$s recommended something to you</string>
+    <string name="inbox_toast_request">%1$s wants to be friends</string>
+    <string name="inbox_toast_accepted">You and %1$s are now friends</string>
+    <!-- v2.2.0: friends -->
+    <string name="friend_add">Add friend</string>
+    <string name="friend_my_qr">My QR code</string>
+    <string name="friend_scan">Scan</string>
+    <string name="friend_requests">Friend requests</string>
+    <string name="friend_accept">Accept</string>
+    <string name="friend_decline">Decline</string>
+    <string name="friend_request">Add</string>
+    <string name="friends_listening">Listening now</string>
+    <string name="friends_yours">Your friends (%1$d)</string>
+    <string name="friends_empty">Add friends by searching their username or scanning their QR code.</string>
+    <string name="friend_remove">Remove</string>
+    <string name="friend_remove_title">Remove %1$s?</string>
+    <string name="friend_remove_note">You\'ll stop seeing each other\'s listening and recommendations. You can add each other again later.</string>
+    <string name="friend_requested">Waiting for them to accept</string>
+    <string name="friend_cancel_request">Cancel</string>
+    <string name="friend_search_hint">Username</string>
+    <string name="friend_search_none">No one with that name.</string>
+    <string name="friend_status_friends">Friends</string>
+    <string name="friend_status_requested">Requested</string>
+    <string name="friend_qr_note">Anyone who scans this becomes your friend. Show it in person; tap New code if it got out.</string>
+    <string name="friend_qr_reset">New code</string>
+    <string name="friend_added">You and %1$s are now friends</string>
+    <string name="friend_code_bad">That isn\'t a valid SpinUs friend code.</string>
+    <string name="friend_scan_unavailable">The scanner couldn\'t open. Scan the code with your camera app instead.</string>
 </resources>

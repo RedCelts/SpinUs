@@ -225,6 +225,25 @@ fun SettingsScreen(
         )
         Spacer(modifier = Modifier.height(24.dp))
 
+        run {
+            var showPw by remember { mutableStateOf(false) }
+            val client = LocalSpinUs.current
+            if (client != null) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { showPw = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(R.string.pw_change_title)) }
+                Spacer(modifier = Modifier.height(12.dp))
+                if (showPw) {
+                    ChangePasswordDialog(
+                        client = client,
+                        onDone = { showPw = false },
+                        onDismiss = { showPw = false }
+                    )
+                }
+            }
+        }
+
         Button(
             onClick = { showServerDialog = true },
             colors = ButtonDefaults.buttonColors(

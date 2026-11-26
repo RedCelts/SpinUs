@@ -306,12 +306,23 @@ fun HomeScreen(
             ) {
                 Box {
                     IconButton(onClick = { menuOpen = true }) {
-                        Icon(
-                            imageVector = Icons.Filled.AccountCircle,
-                            contentDescription = "Profile",
-                            modifier = Modifier.size(36.dp),
-                            tint = MaterialTheme.colorScheme.secondary
-                        )
+                        // Badge: recommendations from friends not seen yet.
+                        androidx.compose.material3.BadgedBox(
+                            badge = {
+                                if (Inbox.unread > 0) {
+                                    androidx.compose.material3.Badge {
+                                        Text(if (Inbox.unread > 99) "99+" else Inbox.unread.toString())
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AccountCircle,
+                                contentDescription = "Profile",
+                                modifier = Modifier.size(36.dp),
+                                tint = MaterialTheme.colorScheme.secondary
+                            )
+                        }
                     }
                     DropdownMenu(
                         expanded = menuOpen,
@@ -319,6 +330,11 @@ fun HomeScreen(
                     ) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.menu_friends)) },
+                            trailingIcon = {
+                                if (Inbox.unread > 0) {
+                                    androidx.compose.material3.Badge { Text(Inbox.unread.toString()) }
+                                }
+                            },
                             onClick = { menuOpen = false; onOpenFriends() }
                         )
                         DropdownMenuItem(

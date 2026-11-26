@@ -136,8 +136,118 @@ class SpinUsClient(
         userName = user.getString("name")
         isAdmin = user.optBoolean("isAdmin", false)
         sessionId = json.optStringOrNull("sessionId")
-        return AuthResult(token!!, userId!!, userName!!, isAdmin)
+        return AuthResult(token!!, userId!!, userName!!, isAdmin, user.optBoolean("mustChangePassword", false))
     }
+
+    /**
+     * Change your password ([current] is the temporary one on a first
+     * sign-in). Your other devices are signed out. Throws with the
+     * server's reason ("the current password is wrong", ...) on failure.
+     */
+    suspend fun changePassword(current: String, new: String) {
+        val body = JSONObject().put("currentPassword", current).put("password", new)
+        executeRaw(authedRequest("/api/me/password").post(body.json()).build(), "change password")
+    }
+
+    // ---- Friends & recommendations ----
+
+    private fun JSONArray?.toFriends(): List<Friend> = if (this == null) emptyList() else
+        (0 until length()).map { i -> getJSONObject(i).let { Friend(it.getString("id"), it.optString("name")) } }
+
+    /** People you're friends with (both sides agreed, or a scanned QR code). */
+    suspend fun getFriends(): List<Friend> = items("/api/friends", "friends").toFriends()
+
+    suspend fun getFriendRequests(): FriendRequests {
+        val json = getJson("/api/friends/requests", "friend requests")
+        return FriendRequests(json.optJSONArray("incoming").toFriends(), json.optJSONArray("outgoing").toFriends())
+    }
+
+    /** Find people on the server by username (2+ letters). */
+    suspend fun searchPeople(query: String): List<PersonHit> {
+        val arr = items("/api/friends/search?q=${enc(query)}", "search people")
+        return (0 until arr.length()).map { i ->
+            val p = arr.getJSONObject(i)
+            PersonHit(p.getString("id"), p.optString("name"), p.optStringOrNull("relation"))
+        }
+    }
+
+    private suspend fun friendCall(path: String, userId: String): String? {
+        val body = JSONObject().put("userId", userId)
+        val res = executeRaw(authedRequest(path).post(body.json()).build(), "friends") ?: return null
+        return if (res.isBlank()) null else JSONObject(res).optStringOrNull("relation")
+    }
+
+    /** Send a friend request (or accept theirs, if they already asked). Returns the new relation. */
+    suspend fun requestFriend(userId: String): String? = friendCall("/api/friends/request", userId)
+    suspend fun acceptFriend(userId: String) { friendCall("/api/friends/accept", userId) }
+    /** Unfriend, cancel your request, or decline theirs. */
+    suspend fun removeFriend(userId: String) { friendCall("/api/friends/remove", userId) }
+
+    /** Your QR code (the code, and the spinus://friend/<code> link it encodes). */
+    suspend fun myFriendCode(reset: Boolean = false): Pair<String, String> {
+        val json = if (reset) {
+            JSONObject(executeRaw(authedRequest("/api/friends/code/reset").post(JSONObject().json()).build(), "code")
+                ?: throw IOException("code failed"))
+        } else getJson("/api/friends/code", "code")
+        return json.getString("code") to json.getString("link")
+    }
+
+    /** Scanned someone's code (or link): you're friends now. Returns their name. */
+    suspend fun useFriendCode(codeOrLink: String): String {
+        val body = JSONObject().put("code", codeOrLink)
+        val res = executeRaw(authedRequest("/api/friends/code").post(body.json()).build(), "add friend")
+            ?: throw IOException("add friend failed: HTTP 404 (that code isn't valid; ask them to show it again)")
+        return JSONObject(res).optJSONObject("friend")?.optString("name").orEmpty()
+    }
+
+    /** Recommend a song ("track"), "album" or "artist" to [toUserIds]. */
+    suspend fun recommend(toUserIds: List<String>, itemType: String, itemId: String, message: String? = null) {
+        val body = JSONObject().apply {
+            put("toUserIds", JSONArray(toUserIds))
+            put("itemType", itemType)
+            put("itemId", itemId)
+            if (!message.isNullOrBlank()) put("message", message)
+        }
+        executeRaw(authedRequest("/api/recommendations").post(body.json()).build(), "recommend")
+            ?: throw IOException("recommend failed: not in the library")
+    }
+
+    /** Recommendations sent to you, newest first. */
+    suspend fun getRecommendations(): List<Recommendation> {
+        val arr = items("/api/recommendations", "recommendations")
+        return (0 until arr.length()).map { i ->
+            val r = arr.getJSONObject(i)
+            Recommendation(
+                id = r.getString("id"), from = r.optString("from"), itemType = r.optString("itemType"),
+                itemId = r.optString("itemId"), title = r.optString("title"), subtitle = r.optStringOrNull("subtitle"),
+                message = r.optStringOrNull("message"), imageId = r.optString("imageId"),
+                imageTag = r.optStringOrNull("imageTag"), albumId = r.optStringOrNull("albumId"),
+                artistId = r.optStringOrNull("artistId"), read = r.optBoolean("read"), sentAt = r.optString("sentAt")
+            )
+        }
+    }
+
+    suspend fun unreadRecommendations(): Int =
+        getJson("/api/recommendations/unread", "unread").optInt("count", 0)
+
+    suspend fun markRecommendationsRead() {
+        executeRaw(authedRequest("/api/recommendations/read").post(JSONObject().json()).build(), "mark read")
+    }
+
+    suspend fun deleteRecommendation(id: String) {
+        executeRaw(authedRequest("/api/recommendations/$id").delete().build(), "delete recommendation")
+    }
+
+    /** Songs by id (e.g. to play a recommended song). */
+    suspend fun getTracksByIds(ids: List<String>): List<Track> =
+        if (ids.isEmpty()) emptyList() else tracks("/api/tracks?ids=${ids.joinToString(",")}")
+
+    /**
+     * Called (on a background thread) when something arrives for the badge:
+     * [kind] "recommendation", "friend-request" or "friend-accepted"; [unread]
+     * is the new badge count.
+     */
+    @Volatile var onInbox: ((kind: String, from: String, unread: Int) -> Unit)? = null
 
     /** Restore a previously saved login (from [AuthStore]) without calling the server. */
     fun restoreSession(
@@ -373,6 +483,8 @@ class SpinUsClient(
             val msg = JSONObject(text)
             when (msg.optString("type")) {
                 "hello" -> msg.optStringOrNull("sessionId")?.let { sessionId = it }
+                "recommendation", "friend-request", "friend-accepted" ->
+                    onInbox?.invoke(msg.optString("type"), msg.optString("from"), msg.optInt("unread", 0))
                 "message" -> {
                     val header = msg.optString("header")
                     val body = msg.optString("text")
