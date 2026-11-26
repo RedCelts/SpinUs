@@ -45,7 +45,7 @@ jobs:
           name: SpinUs-v${{ env.VERSION }}
           path: SpinUs-v${{ env.VERSION }}.apk
       - name: Publish as a GitHub Release (download it on the phone)
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/spinus-server'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -53,4 +53,5 @@ jobs:
           gh release create "$TAG" "SpinUs-v$VERSION.apk" \
             --title "SpinUs $VERSION (build ${{ github.run_number }})" \
             --notes "Debug build from ${{ github.sha }}. Installs over the app already on the phone (same signing key)." \
-            --target "${{ github.sha }}"
+            --target "${{ github.sha }}" \
+            $([ "${{ github.ref_name }}" = main ] || echo --prerelease)
