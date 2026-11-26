@@ -827,3 +827,19 @@ families by time of day. Tracks now carry `genres` + `year`
   canvas (fills the launcher's mask), background #0A0F10; legacy square
   (dark rounded square) and round icons for every density.
 - Release APK is now `SpinUs-v<version>.apk`, titled "SpinUs …".
+
+## v2.0.0 — own server, no Jellyfin
+
+- New `server/` (Python, aiohttp + mutagen + Pillow, SQLite): scans the music
+  folder directly and serves the library, streams (original files with byte
+  ranges; ALAC/WMA/AIFF/APE transcoded to MP3 with ffmpeg), artwork, lyrics,
+  favorites, playlists, play counts, listening-history storage, stations,
+  similar albums, and Friends presence + messages over a WebSocket. Docker /
+  CasaOS compose file and a small admin web page on port 8484.
+- App: `JellyfinClient` replaced by `SpinUsClient` with the same public
+  methods, so screens are unchanged. Bearer-token auth; port 8484 is assumed
+  when the address has none. Friends' emoji reactions now show as a toast.
+- Logins saved by 1.x (Jellyfin) are ignored, so the app asks to sign in once
+  after updating.
+- Tests: `server/tests` (end-to-end against a real ffmpeg-made library, plus
+  a contract test that every `/api` path in SpinUsClient.kt exists).

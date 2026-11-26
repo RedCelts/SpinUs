@@ -10,7 +10,7 @@ import java.net.URI
 import java.util.concurrent.TimeUnit
 
 /**
- * One OkHttp client for the whole app — Jellyfin API, presence socket,
+ * One OkHttp client for the whole app — the server API, presence socket,
  * images (Coil) and audio streaming (ExoPlayer's OkHttpDataSource) — so
  * the built-in Tailscale routing applies everywhere.
  */

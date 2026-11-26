@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.oniel.music.R
 import com.oniel.music.data.FriendSession
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Playlist
 import com.oniel.music.data.Track
 import kotlinx.coroutines.delay
@@ -56,7 +56,7 @@ val FriendEmojis = listOf("\u2764\uFE0F", "\uD83D\uDC4D", "\uD83D\uDE0A", "\uD83
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendsSheet(
-    client: JellyfinClient,
+    client: SpinUsClient,
     myUserId: String,
     onDismiss: () -> Unit
 ) {

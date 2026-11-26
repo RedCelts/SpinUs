@@ -61,7 +61,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.oniel.music.R
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Track
 import kotlinx.coroutines.delay
 
@@ -73,7 +73,7 @@ import kotlinx.coroutines.delay
  */
 @Composable
 fun SearchScreen(
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     onAlbumClick: (String) -> Unit,
     onTrackPlayed: () -> Unit,
@@ -360,7 +360,7 @@ fun SearchScreen(
 @Composable
 private fun GenreBrowser(
     genres: List<BrowseGenre>?,
-    client: JellyfinClient,
+    client: SpinUsClient,
     onGenreClick: (jfId: String?, dzId: Long?, name: String, style: String?) -> Unit
 ) {
     when {

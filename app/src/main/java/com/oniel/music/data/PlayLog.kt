@@ -16,7 +16,7 @@ import java.util.Locale
  *
  * - At most [MAX_ENTRIES] entries are kept on the phone (oldest dropped first).
  * - Entries older than [RETENTION_DAYS] days are pruned from the phone on
- *   every write. The copy in the user's Jellyfin account (HistorySync)
+ *   every write. The copy in the user's SpinUs account (HistorySync)
  *   is never pruned.
  * - A week is Monday–Sunday. Weeks are built from this log only — the
  *   server keeps no dated play history, so nothing older than the first

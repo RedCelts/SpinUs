@@ -97,7 +97,7 @@ object Crossfade {
 
     /**
      * The track length to time the fade against: the player's own
-     * duration when the stream reports one (> 0), otherwise Jellyfin's
+     * duration when the stream reports one (> 0), otherwise the server's
      * runtime for the track (a transcoded stream reports no length —
      * ExoPlayer returns C.TIME_UNSET, a large negative number). 0 when
      * neither is known, which disables the fade for that track.

@@ -49,7 +49,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.oniel.music.R
 import com.oniel.music.data.Album
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Playlist
 import com.oniel.music.data.Track
 
@@ -59,7 +59,7 @@ import com.oniel.music.data.Track
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     initialTab: Int,
     onAlbumClick: (String) -> Unit,
@@ -258,7 +258,7 @@ object LibraryCache {
 private fun ArtistsSection(
     tracks: List<Track>,
     pictures: Map<String, ArtistHit>,
-    client: JellyfinClient,
+    client: SpinUsClient,
     onArtistClick: (String) -> Unit
 ) {
     val artists = remember(tracks) {
@@ -309,7 +309,7 @@ private fun ArtistsSection(
 @Composable
 private fun AlbumsSection(
     albums: List<Album>,
-    client: JellyfinClient,
+    client: SpinUsClient,
     onAlbumClick: (String) -> Unit
 ) {
     LazyVerticalGrid(

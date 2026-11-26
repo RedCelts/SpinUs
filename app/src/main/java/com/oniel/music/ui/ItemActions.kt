@@ -47,7 +47,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.oniel.music.R
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Playlist
 import com.oniel.music.data.Track
 import kotlinx.coroutines.launch
@@ -57,7 +57,7 @@ import kotlinx.coroutines.launch
  * (TrackRow and friends) can offer their ⋮ menu without every screen
  * passing the client down.
  */
-val LocalJellyfin = staticCompositionLocalOf<JellyfinClient?> { null }
+val LocalSpinUs = staticCompositionLocalOf<SpinUsClient?> { null }
 
 /**
  * Height of the frosted bottom chrome (mini player + tab bar + system nav
@@ -88,14 +88,14 @@ sealed class ActionTarget {
 }
 
 /** The item id favorites are stored against (artist looked up by name if needed). */
-private suspend fun ActionTarget.favoriteId(client: JellyfinClient): String? = when (this) {
+private suspend fun ActionTarget.favoriteId(client: SpinUsClient): String? = when (this) {
     is ActionTarget.Song -> track.id
     is ActionTarget.AlbumItem -> albumId
     is ActionTarget.ArtistItem -> artistId ?: client.getArtistByName(name)?.id
 }
 
 /** Every song the target stands for, as playlist item ids. */
-private suspend fun ActionTarget.trackIds(client: JellyfinClient): List<String> = when (this) {
+private suspend fun ActionTarget.trackIds(client: SpinUsClient): List<String> = when (this) {
     is ActionTarget.Song -> listOf(track.id)
     is ActionTarget.AlbumItem -> client.getAlbumTracks(albumId).map { it.id }
     is ActionTarget.ArtistItem -> {
@@ -110,7 +110,7 @@ private suspend fun ActionTarget.trackIds(client: JellyfinClient): List<String> 
  */
 @Composable
 fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
-    val client = LocalJellyfin.current ?: return
+    val client = LocalSpinUs.current ?: return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var open by remember { mutableStateOf(false) }
@@ -217,7 +217,7 @@ fun ItemMoreButton(target: ActionTarget, modifier: Modifier = Modifier) {
  */
 @Composable
 fun AddToPlaylistDialog(
-    client: JellyfinClient,
+    client: SpinUsClient,
     title: String,
     resolveTrackIds: suspend () -> List<String>,
     onDismiss: () -> Unit,

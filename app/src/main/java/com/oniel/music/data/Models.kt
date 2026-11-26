@@ -1,7 +1,7 @@
 package com.oniel.music.data
 
 /**
- * Plain data models for the Jellyfin data layer.
+ * Plain data models for the the server data layer.
  *
  * These are deliberately free of any Android or networking types so the
  * pure logic in [Scoring] and [PlayLog] can be unit-tested on the JVM.
@@ -17,11 +17,11 @@ data class Track(
     val albumArtist: String,
     val runTimeTicks: Long,
     val imageTag: String?,
-    /** Jellyfin UserData.PlayCount (0 when never played). */
+    /** the server UserData.PlayCount (0 when never played). */
     val playCount: Int = 0,
-    /** Jellyfin UserData.LastPlayedDate as an ISO-8601 string, null when never played. */
+    /** the server UserData.LastPlayedDate as an ISO-8601 string, null when never played. */
     val lastPlayedDate: String? = null,
-    /** Jellyfin UserData.IsFavorite. */
+    /** the server UserData.IsFavorite. */
     val isFavorite: Boolean = false,
     /** Id of the first artist (ArtistItems, else AlbumArtists); null if unknown. */
     val artistId: String? = null,
@@ -45,9 +45,9 @@ data class Album(
     val dateCreated: String?,
     val imageTag: String?,
     val childCount: Int,
-    /** Jellyfin UserData.LastPlayedDate, null when never played. */
+    /** the server UserData.LastPlayedDate, null when never played. */
     val lastPlayedDate: String?,
-    /** Jellyfin UserData.PlayCount. */
+    /** the server UserData.PlayCount. */
     val playCount: Int,
     /** Id of the album artist (AlbumArtists[0]), null if unknown. */
     val artistId: String? = null
@@ -130,7 +130,7 @@ data class ItemDetails(
     val primaryImageTag: String?,
     /** The item's own backdrop images (artists usually have these). */
     val backdropTags: List<String>,
-    /** Where Jellyfin says to take a backdrop from when the item has none (album -> artist). */
+    /** Where the server says to take a backdrop from when the item has none (album -> artist). */
     val parentBackdropItemId: String?,
     val parentBackdropTags: List<String>,
     /** Album artist for albums; null for artists. */

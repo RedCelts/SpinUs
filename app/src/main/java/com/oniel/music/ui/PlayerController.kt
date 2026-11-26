@@ -18,7 +18,7 @@ import androidx.media3.session.SessionCommand
 import androidx.media3.session.SessionToken
 import com.oniel.music.data.Crossfade
 import com.oniel.music.data.HistorySync
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.LyricLine
 import com.oniel.music.data.PlayLog
 import com.oniel.music.data.SettingsStore
@@ -37,7 +37,7 @@ import java.time.Instant
 /**
  * Owns playback state for the whole app. Talks to PlaybackService through a
  * MediaController; the service owns the ExoPlayer. Reports progress to
- * Jellyfin (Playing / Played / Stopped) so play counts and dates update,
+ * the server (Playing / Played / Stopped) so play counts and dates update,
  * and records finished plays to the on-device PlayLog at >= 60% heard or
  * at the end of the track.
  *
@@ -49,13 +49,13 @@ private const val MIN_PLAY_MS = 30_000L
 
 class PlayerController(application: Application) : AndroidViewModel(application) {
 
-    private var client: JellyfinClient? = null
+    private var client: SpinUsClient? = null
     private var controller: MediaController? = null
     private var pendingPlay: (() -> Unit)? = null
 
     private val playLog = PlayLog(File(application.filesDir, "playlog"))
 
-    // ---- Listening-history sync with the Jellyfin account ----
+    // ---- Listening-history sync with the SpinUs account ----
 
     /** Last successful history sync (epoch ms), 0 = not yet this session. */
     var historySyncedAtMs by mutableStateOf(0L)
@@ -216,7 +216,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
                     lastTickAt = nowTick
                     positionMs = c.currentPosition
                     // A transcoded stream reports no length (TIME_UNSET):
-                    // keep Jellyfin's runtime so the seek bar still works.
+                    // keep the server's runtime so the seek bar still works.
                     val streamDuration = c.duration
                     durationMs = if (streamDuration > 0) streamDuration
                         else ticksToMs(currentTrack?.runTimeTicks ?: 0L)
@@ -229,7 +229,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun attachClient(newClient: JellyfinClient) {
+    fun attachClient(newClient: SpinUsClient) {
         client = newClient
         // Friends' apps ask for our stats over session messages.
         newClient.statsResponder = {
@@ -243,7 +243,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
     /**
      * Pushes what only the UI knows into PlaybackService over custom
      * commands: the `Authorization` header for ExoPlayer's audio
-     * requests (the universal stream endpoint 401s without it) and the
+     * requests (the stream URL carries the token too) and the
      * saved crossfade length. The service also reads both from storage
      * when it starts, so the first track is covered even before this
      * runs; this is the refresh path for sign-in and setting changes.
@@ -445,7 +445,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
         }
     }
 
-    // --- Jellyfin reporting + play log ---------------------------------------
+    // --- Server reporting + play log -------------------------------------------
 
     private fun onTrackChanged(
         previous: Track? = null,
@@ -488,7 +488,7 @@ class PlayerController(application: Application) : AndroidViewModel(application)
     }
 
     /**
-     * A play counts (stats, history, Jellyfin play count) once you've
+     * A play counts (stats, history, server play count) once you've
      * actually listened 30 seconds — or nearly all of a shorter song.
      */
     private fun listenedEnough(track: Track): Boolean {

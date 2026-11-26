@@ -65,7 +65,7 @@ import coil.compose.AsyncImage
 import com.oniel.music.R
 import com.oniel.music.data.Album
 import com.oniel.music.data.ItemDetails
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Track
 
 /**
@@ -78,7 +78,7 @@ import com.oniel.music.data.Track
 fun ArtistScreen(
     artistId: String?,
     artistName: String?,
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     onBack: () -> Unit,
     onAlbumClick: (String) -> Unit,
@@ -318,7 +318,7 @@ fun SectionTitle(text: String) {
 @Composable
 fun AlbumCarousel(
     albums: List<Album>,
-    client: JellyfinClient,
+    client: SpinUsClient,
     onAlbumClick: (String) -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { albums.size })

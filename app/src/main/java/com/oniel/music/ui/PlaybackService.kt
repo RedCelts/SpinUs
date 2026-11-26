@@ -49,8 +49,9 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Foreground playback service. Declared explicitly in AndroidManifest.xml.
  * The UI talks to it through a MediaController (see PlayerController).
  *
- * 1. Auth on audio requests. Jellyfin 12.2.0's universal stream endpoint
- *    needs the `Authorization: MediaBrowser Token="..."` header. Both
+ * 1. Auth on audio requests. The SpinUs server's stream endpoint takes
+ *    the `Authorization: Bearer ...` header (the URL carries the token
+ *    too). Both
  *    players share one [OkHttpDataSource.Factory] that carries it (built on
  *    NetClients.http, so built-in Tailscale routing applies to streams).
  *
@@ -73,7 +74,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  *    have worked anyway. Swapping players needs no seek at all.
  *
  *    The track's length comes from the player when the stream reports
- *    one, and otherwise from Jellyfin's RunTimeTicks (sent in the
+ *    one, and otherwise from the server's RunTimeTicks (sent in the
  *    MediaItem extras by PlayerController), so a transcoded stream still
  *    crossfades.
  *
@@ -100,7 +101,7 @@ class PlaybackService : MediaLibraryService() {
         const val ACTION_SET_CROSSFADE_SECONDS = "com.oniel.music.SET_CROSSFADE_SECONDS"
         const val EXTRA_CROSSFADE_SECONDS = "crossfade_seconds"
 
-        /** MediaMetadata extras key: track length from Jellyfin, in ms. */
+        /** MediaMetadata extras key: track length from the server, in ms. */
         const val EXTRA_RUNTIME_MS = "runtime_ms"
         /** MediaMetadata extras key: the track's album id (same album = no crossfade). */
         const val EXTRA_ALBUM_ID = "album_id"
@@ -485,7 +486,7 @@ class PlaybackService : MediaLibraryService() {
             }
             if (!token.isNullOrEmpty()) {
                 factory.setDefaultRequestProperties(
-                    mapOf("Authorization" to "MediaBrowser Token=\"$token\"")
+                    mapOf("Authorization" to "Bearer $token")
                 )
             }
             val seconds = withTimeoutOrNull(2000L) {
@@ -568,7 +569,7 @@ class PlaybackService : MediaLibraryService() {
 
     // --- Crossfade -----------------------------------------------------------
 
-    /** Track length: from the stream when known, else Jellyfin's runtime. */
+    /** Track length: from the stream when known, else the server's runtime. */
     private fun durationOf(p: ExoPlayer): Long {
         val fromMetadata = p.currentMediaItem?.mediaMetadata?.extras
             ?.getLong(EXTRA_RUNTIME_MS, 0L) ?: 0L

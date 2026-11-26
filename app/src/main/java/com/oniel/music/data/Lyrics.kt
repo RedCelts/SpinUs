@@ -1,11 +1,11 @@
 package com.oniel.music.data
 
 /**
- * Pure lyric handling. The Jellyfin lyrics endpoint returns no "is
+ * Pure lyric handling. The the server lyrics endpoint returns no "is
  * synced" flag, so synced-ness is derived from the timestamps: a song
  * is synced when at least two lines carry distinct start times.
  *
- * Contract (mirrors [JellyfinClient.getLyrics]):
+ * Contract (mirrors [SpinUsClient.getLyrics]):
  * - null  -> the server has no lyrics for the track (HTTP 404).
  * - empty -> the track has lyrics, but only plain text (no usable
  *            timestamps); the scrolling views treat this as "no lyrics".
@@ -26,7 +26,7 @@ object Lyrics {
     /**
      * Classify raw lyric lines into synced lines, or an empty list for
      * plain-text-only lyrics. Blank lines (including the trailing empty
-     * line Jellyfin appends to plain lyrics) are dropped first.
+     * line the server appends to plain lyrics) are dropped first.
      */
     fun classify(rawLines: List<RawLyricLine>): List<LyricLine> {
         val lines = rawLines.filter { it.text.isNotBlank() }

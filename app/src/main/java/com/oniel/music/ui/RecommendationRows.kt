@@ -47,7 +47,7 @@ import androidx.compose.ui.unit.dp
 import com.oniel.music.R
 import com.oniel.music.data.Addition
 import com.oniel.music.data.DeezerClient
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Pick
 import kotlinx.coroutines.launch
 
@@ -126,7 +126,7 @@ private fun RecCard(
 @Composable
 fun YouMightEnjoyRow(
     picks: List<Pick>,
-    client: JellyfinClient,
+    client: SpinUsClient,
     onAlbumClick: (String) -> Unit,
     onArtistClick: (String) -> Unit,
     onPlayTrack: (com.oniel.music.data.Track) -> Unit

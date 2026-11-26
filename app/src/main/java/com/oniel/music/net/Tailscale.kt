@@ -19,7 +19,7 @@ import java.net.NetworkInterface
 
 /**
  * Embedded Tailscale: the app joins the tailnet as its own device
- * ("oniel-music"), so Jellyfin is reachable over Tailscale without the
+ * ("oniel-music"), so the server is reachable over Tailscale without the
  * Tailscale app or a VPN. The Go side (tsbridge.aar) runs tsnet and a
  * local SOCKS5 proxy; [NetClients] sends requests for tailnet hosts
  * through it.

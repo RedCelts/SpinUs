@@ -12,13 +12,13 @@
     <string name="tab_settings">Settings</string>
 
     <!-- Login -->
-    <string name="login_intro">Sign in to your Jellyfin server to listen to your music.</string>
+    <string name="login_intro">Sign in to your SpinUs server to listen to your music.</string>
     <string name="login_server_label">Server address</string>
-    <string name="login_server_hint">http://192.168.1.10:8096</string>
+    <string name="login_server_hint">192.168.1.10</string>
     <string name="login_username_label">Username</string>
     <string name="login_password_label">Password</string>
     <string name="login_button">Sign in</string>
-    <string name="login_note">On your home network use http://&lt;server-IP&gt;:8096. Away from home, turn on built-in Tailscale below and use your server\'s Tailscale address.</string>
+    <string name="login_note">On your home network type your server\'s IP address (port 8484 is added for you). Away from home, turn on built-in Tailscale below and use your server\'s Tailscale address. The first person to sign in to a new server becomes its admin.</string>
 
     <!-- Home -->
     <string name="home_title">Home</string>
@@ -66,7 +66,7 @@
 
     <!-- Listening history sync -->
     <string name="history_title">Listening history</string>
-    <string name="history_subtitle">Saved to your Jellyfin account, so it stays after reinstalling and follows you to any phone you sign in on.</string>
+    <string name="history_subtitle">Saved to your SpinUs account, so it stays after reinstalling and follows you to any phone you sign in on.</string>
     <string name="history_syncing">Syncing…</string>
     <string name="history_synced">Synced at %1$s</string>
     <string name="history_not_yet">Not synced yet</string>
@@ -146,7 +146,7 @@
     <string name="stats_minutes_short">%1$d min</string>
     <string name="stats_streak">%1$d day streak</string>
     <string name="stats_no_week">Nothing played this week yet.</string>
-    <string name="stats_note">This week counts each song once, from its last-played date — Jellyfin does not keep a dated play history, and minutes are estimated from track lengths. Past weeks and streaks are recorded on this device from the day the app was installed.</string>
+    <string name="stats_note">This week counts each song once, from its last-played date, and minutes are estimated from track lengths. Past weeks and streaks are recorded on this device from the day the app was installed.</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>

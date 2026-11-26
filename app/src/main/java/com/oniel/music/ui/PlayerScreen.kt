@@ -70,7 +70,7 @@ import androidx.compose.ui.unit.sp
 import com.oniel.music.R
 import com.oniel.music.data.FriendSession
 import com.oniel.music.data.ItemDetails
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.LyricLine
 import com.oniel.music.data.Track
 import kotlinx.coroutines.delay
@@ -88,7 +88,7 @@ import kotlin.math.roundToInt
  */
 @Composable
 fun PlayerScreen(
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     myUserId: String,
     onMinimize: () -> Unit,

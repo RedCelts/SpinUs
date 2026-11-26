@@ -3,12 +3,12 @@ package com.oniel.music.data
 import org.json.JSONObject
 
 /**
- * Keeps the listening history (PlayLog) in the user's Jellyfin account,
+ * Keeps the listening history (PlayLog) in the user's SpinUs account,
  * so it survives uninstalls and follows the login to any phone.
  *
- * Storage: Jellyfin's per-user "display preferences" for this app
- * (`/DisplayPreferences/onielmusic-history?userId=..&client=onielmusic`),
- * whose CustomPrefs is a string -> string map. The history is the same
+ * Storage: a per-user JSON document on the SpinUs server
+ * (`/api/prefs/onielmusic.onielmusic-history`) whose CustomPrefs is a
+ * string -> string map (the layout kept from the Jellyfin days). The history is the same
  * compact JSON as the phone's file, split into chunks of at most
  * [CHUNK_CHARS] characters under keys "h1.0000", "h1.0001", ...
  *
@@ -22,7 +22,7 @@ object HistorySync {
     const val PREFS_ID = "onielmusic-history"
     const val CLIENT = "onielmusic"
     private const val KEY_PREFIX = "h1."
-    /** Jellyfin stores each value in a column sized for ~32k characters. */
+    /** Chunk size kept from the Jellyfin days (it capped each value at ~32k characters). */
     const val CHUNK_CHARS = 30_000
 
     data class Result(
@@ -75,7 +75,7 @@ object HistorySync {
      * One sync round with the server: read the account copy, merge the
      * phone's [local] plays in, and write it back only if it grew.
      */
-    suspend fun sync(client: JellyfinClient, local: List<PlayLog.Entry>): Result {
+    suspend fun sync(client: SpinUsClient, local: List<PlayLog.Entry>): Result {
         val dto = client.getAppPrefs(PREFS_ID, CLIENT)
         val prefs = dto.optJSONObject("CustomPrefs").toStringMap()
         val remote = decode(prefs)

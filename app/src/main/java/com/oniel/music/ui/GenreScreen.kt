@@ -69,7 +69,7 @@ import androidx.compose.ui.unit.dp
 import com.oniel.music.R
 import com.oniel.music.data.Album
 import com.oniel.music.data.DzTrack
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Track
 import com.oniel.music.data.matchKey
 
@@ -86,7 +86,7 @@ fun GenreScreen(
     genreName: String,
     /** A style without a Deezer genre (Dancehall…): chart from its top playlist. */
     deezerStyle: String? = null,
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     onBack: () -> Unit,
     onAlbumClick: (String) -> Unit,
@@ -533,7 +533,7 @@ object LibraryIndex {
 
     fun key(artist: String, title: String) = "${matchKey(artist)}|${matchKey(title)}"
 
-    suspend fun get(client: JellyfinClient): Map<String, Track> {
+    suspend fun get(client: SpinUsClient): Map<String, Track> {
         val now = System.currentTimeMillis()
         cached?.let { if (now - builtAt < TTL_MS) return it }
         // Reuse Home's song list when it's there (no second full read).

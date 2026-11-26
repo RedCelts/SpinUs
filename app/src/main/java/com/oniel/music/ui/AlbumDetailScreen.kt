@@ -44,7 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.oniel.music.R
 import com.oniel.music.data.ItemDetails
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Track
 
 /**
@@ -56,7 +56,7 @@ import com.oniel.music.data.Track
 @Composable
 fun AlbumDetailScreen(
     albumId: String,
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     onBack: () -> Unit,
     onTrackPlayed: () -> Unit,

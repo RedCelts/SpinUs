@@ -13,7 +13,7 @@ Everything you need to build and change the app yourself.
 ## Where things live
 - `app/src/main/java/com/oniel/music/` — all the Kotlin code
   - `MainActivity.kt` — launch, first screen
-  - `data/JellyfinClient.kt` — talks to your Jellyfin server (login, library,
+  - `data/SpinUsClient.kt` — talks to the SpinUs server (login, library,
     search, lyrics, presence, mark-played)
   - `data/AuthStore.kt` / `data/SettingsStore.kt` — saved login + settings
   - `ui/PlayerController.kt` + `ui/PlaybackService.kt` — playback, queue,
@@ -21,8 +21,8 @@ Everything you need to build and change the app yourself.
   - `ui/` screens — Home, Player, Library, Search, Settings, Friends, Stats
 - `app/src/main/res/` — layouts, strings, the launcher icon
 - `app/src/main/AndroidManifest.xml`
-- `docs/API-NOTES.md` — the Jellyfin API, verified live (what each call
-  returns, the auth header, the 401 gotcha, presence, lyrics)
+- `docs/SERVER-API.md` — the SpinUs server API the app uses
+- `server/` — the SpinUs server itself (runs on the mini PC; see server/README.md)
 - `BUILD-NOTES.md` — how it was built here, version history, fixes
 - `manual-build/` — the scripts used to build it in this environment
   (Gradle is blocked here, so it was built by hand with kotlinc/aapt2/d8).

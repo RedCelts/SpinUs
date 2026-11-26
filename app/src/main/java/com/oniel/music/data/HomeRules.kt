@@ -11,9 +11,9 @@ import kotlin.random.Random
  * Home-screen recommendation rules (v1.5.0).
  *
  * Plays come from the play log, so the 30-second rule applies everywhere.
- * Jellyfin has no BPM / energy / valence / similarity scores, so:
+ * The server has no BPM / energy / valence / similarity scores, so:
  *  - "similar artists" = genre overlap (Jaccard of genre tags) >= 0.70,
- *    plus Jellyfin's instant mix (server-side genre similarity);
+ *    plus the server's instant mix (server-side genre similarity);
  *  - "mood / BPM cluster" = genre families (calm vs upbeat) per time of day.
  */
 
@@ -270,7 +270,7 @@ object StationRules {
     /**
      * Build an endless-feeling station (60 songs) for [seed]:
      * 25% the seed artist (not skipped more than once), 50% similar artists
-     * (genre overlap >= 0.70, or Jellyfin's instant mix), 25% deep cuts
+     * (genre overlap >= 0.70, or the server's instant mix), 25% deep cuts
      * (played at most once) from the seed's genres. At least 3 songs
      * between two songs by the same artist.
      */

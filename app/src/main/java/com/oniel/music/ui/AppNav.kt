@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.statusBars
@@ -57,7 +58,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.oniel.music.R
 import com.oniel.music.data.AuthStore
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.SavedAuth
 
 private object Routes {
@@ -92,7 +93,7 @@ private object Routes {
 fun OnielMusicApp() {
     val context = LocalContext.current
     val authStore = remember { AuthStore(context) }
-    val client = remember { JellyfinClient(http = com.oniel.music.net.NetClients.http) }
+    val client = remember { SpinUsClient(http = com.oniel.music.net.NetClients.http) }
     val player: PlayerController = viewModel()
 
     var auth by remember { mutableStateOf<SavedAuth?>(null) }
@@ -132,6 +133,18 @@ fun OnielMusicApp() {
     // The player needs the client from the start.
     LaunchedEffect(Unit) {
         player.attachClient(client)
+    }
+
+    // A friend's reaction (sent from their Friends list) shows as a toast.
+    DisposableEffect(Unit) {
+        val main = android.os.Handler(android.os.Looper.getMainLooper())
+        client.onMessage = { from, text ->
+            main.post {
+                val label = if (from.isBlank()) text else "$from: $text"
+                android.widget.Toast.makeText(context.applicationContext, label, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
+        onDispose { client.onMessage = null }
     }
 
     // Listening history follows the account: sync on start / sign-in.
@@ -188,7 +201,7 @@ fun OnielMusicApp() {
         noiseFactor = 0f
     )
 
-    CompositionLocalProvider(LocalJellyfin provides client) {
+    CompositionLocalProvider(LocalSpinUs provides client) {
         Scaffold(
             // Edge to edge: the status / navigation bars are transparent and
             // each screen pads itself (backdrops run up under the status bar).

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpinUs server</title>
+<style>
+  :root { color-scheme: dark; --bg:#0f0f12; --card:#1a1a20; --line:#2a2a33; --fg:#ececf1; --dim:#9a9aa6; --accent:#e8456b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg); }
+  main { max-width:560px; margin:0 auto; padding:32px 18px 60px; }
+  h1 { font-size:24px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 12px; }
+  .sub { color:var(--dim); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; margin-bottom:16px; }
+  input, button { font:inherit; border-radius:9px; border:1px solid var(--line); padding:9px 12px; }
+  input { background:#111116; color:var(--fg); width:100%; margin-bottom:10px; }
+  button { background:var(--accent); color:#fff; border:none; cursor:pointer; font-weight:600; }
+  button.ghost { background:transparent; color:var(--dim); border:1px solid var(--line); font-weight:500; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .row input { margin:0; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
+  li:first-child { border-top:none; }
+  .tag { color:var(--dim); font-size:13px; margin-left:6px; }
+  .err { color:#ff8095; min-height:1.2em; margin:6px 0 0; }
+  .stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; text-align:center; margin-bottom:12px; }
+  .stats b { display:block; font-size:20px; }
+  .stats span { color:var(--dim); font-size:13px; }
+  label.chk { display:flex; gap:6px; align-items:center; color:var(--dim); white-space:nowrap; }
+  label.chk input { width:auto; margin:0; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>SpinUs server</h1>
+  <p class="sub" id="sub">Your music, served from this computer.</p>
+
+  <section class="card" id="login">
+    <h2 id="loginTitle">Sign in</h2>
+    <input id="u" placeholder="Username" autocomplete="username">
+    <input id="p" type="password" placeholder="Password" autocomplete="current-password">
+    <button id="go">Sign in</button>
+    <p class="err" id="loginErr"></p>
+  </section>
+
+  <div id="app" hidden>
+    <section class="card">
+      <h2>Library</h2>
+      <div class="stats">
+        <div><b id="nTracks">–</b><span>songs</span></div>
+        <div><b id="nAlbums">–</b><span>albums</span></div>
+        <div><b id="nArtists">–</b><span>artists</span></div>
+      </div>
+      <p class="sub" id="scanInfo" style="margin:0 0 12px"></p>
+      <button id="scan">Scan for new music</button>
+    </section>
+
+    <section class="card" id="usersCard">
+      <h2>People who can sign in</h2>
+      <ul id="users"></ul>
+      <div style="margin-top:14px">
+        <input id="nu" placeholder="New username">
+        <div class="row">
+          <input id="np" type="password" placeholder="Password">
+          <label class="chk"><input type="checkbox" id="na"> Admin</label>
+          <button id="add">Add</button>
+        </div>
+        <p class="err" id="userErr"></p>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>My password</h2>
+      <div class="row"><input id="mp" type="password" placeholder="New password"><button id="setpw">Change</button></div>
+      <p class="err" id="pwErr"></p>
+    </section>
+
+    <button class="ghost" id="out">Sign out</button>
+  </div>
+</main>
+<script>
+let token = null;
+try { token = sessionStorage.getItem("spinus-token"); } catch (e) {}
+const $ = id => document.getElementById(id);
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) } });
+  if (r.status === 401 && token) { signOut(); throw new Error("Signed out"); }
+  const text = await r.text();
+  const body = text ? JSON.parse(text) : {};
+  if (!r.ok) throw new Error(body.error || ("HTTP " + r.status));
+  return body;
+}
+
+function signOut() {
+  token = null;
+  try { sessionStorage.removeItem("spinus-token"); } catch (e) {}
+  $("app").hidden = true; $("login").hidden = false;
+}
+
+async function load() {
+  const me = await api("/api/me");
+  $("login").hidden = true; $("app").hidden = false;
+  $("sub").textContent = "Signed in as " + me.name + (me.isAdmin ? " (admin)" : "");
+  $("usersCard").hidden = !me.isAdmin; $("scan").hidden = !me.isAdmin;
+  const st = await api("/api/library/status");
+  const s = st.lastScan || {};
+  $("nTracks").textContent = s.tracks ?? "–"; $("nAlbums").textContent = s.albums ?? "–"; $("nArtists").textContent = s.artists ?? "–";
+  $("scanInfo").textContent = (st.scanning ? "Scanning now… " : "") + "Music folder: " + st.musicFolder +
+    (s.finishedAt ? " · last scan " + new Date(s.finishedAt.replace(/\.(\d{3})\d*Z$/, ".$1Z")).toLocaleString() : "");
+  if (me.isAdmin) {
+    const { items } = await api("/api/users");
+    $("users").innerHTML = "";
+    for (const u of items) {
+      const li = document.createElement("li");
+      const name = document.createElement("span");
+      name.textContent = u.name;
+      if (u.isAdmin) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "admin"; name.append(t); }
+      li.append(name);
+      if (u.name.toLowerCase() !== me.name.toLowerCase()) {
+        const b = document.createElement("button"); b.className = "ghost"; b.textContent = "Remove";
+        b.onclick = async () => { if (confirm("Remove " + u.name + "?")) { await api("/api/users/" + encodeURIComponent(u.name), { method: "DELETE" }); load(); } };
+        li.append(b);
+      }
+      $("users").append(li);
+    }
+  }
+}
+
+api("/api/info").then(i => { if (i.needsSetup) { $("loginTitle").textContent = "Create the admin account"; $("go").textContent = "Create and sign in"; } });
+
+$("go").onclick = async () => {
+  $("loginErr").textContent = "";
+  try {
+    const r = await api("/api/auth/login", { method: "POST", body: JSON.stringify({ username: $("u").value, password: $("p").value, deviceId: "web-admin", deviceName: "Browser", client: "SpinUs web" }) });
+    token = r.token;
+    try { sessionStorage.setItem("spinus-token", token); } catch (e) {}
+    load();
+  } catch (e) { $("loginErr").textContent = e.message; }
+};
+$("p").onkeydown = e => { if (e.key === "Enter") $("go").click(); };
+$("scan").onclick = async () => { $("scan").disabled = true; $("scan").textContent = "Scanning…"; try { await api("/api/library/scan", { method: "POST" }); } finally { $("scan").disabled = false; $("scan").textContent = "Scan for new music"; load(); } };
+$("add").onclick = async () => {
+  $("userErr").textContent = "";
+  try { await api("/api/users", { method: "POST", body: JSON.stringify({ name: $("nu").value, password: $("np").value, isAdmin: $("na").checked }) }); $("nu").value = $("np").value = ""; $("na").checked = false; load(); }
+  catch (e) { $("userErr").textContent = e.message; }
+};
+$("setpw").onclick = async () => {
+  try { await api("/api/me/password", { method: "POST", body: JSON.stringify({ password: $("mp").value }) }); $("mp").value = ""; $("pwErr").textContent = "Password changed."; }
+  catch (e) { $("pwErr").textContent = e.message; }
+};
+$("out").onclick = async () => { try { await api("/api/auth/logout", { method: "POST" }); } catch (e) {} signOut(); };
+if (token) load().catch(signOut);
+</script>
+</body>
+</html>

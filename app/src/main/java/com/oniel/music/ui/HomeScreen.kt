@@ -51,7 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.oniel.music.R
 import com.oniel.music.data.Album
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 import com.oniel.music.data.Scoring
 import com.oniel.music.data.Track
 
@@ -68,7 +68,7 @@ import com.oniel.music.data.Track
  */
 @Composable
 fun HomeScreen(
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     onAlbumClick: (String) -> Unit,
     onOpenFriends: () -> Unit,
@@ -507,12 +507,12 @@ fun HomeScreen(
 }
 
 /**
- * Builds a station when tapped (rule 7): your library + Jellyfin's
+ * Builds a station when tapped (rule 7): your library + the server's
  * instant mix for the artist, mixed 25 / 50 / 25 with artist spacing.
  */
 private suspend fun buildStation(
     station: ArtistStation,
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     library: List<Track>
 ): List<Track> {
@@ -529,7 +529,7 @@ private suspend fun buildStation(
 
 /** A mix card: 2×2 collage of the mix's first covers, title, song count. */
 @Composable
-private fun MixCard(mix: com.oniel.music.data.Mix, client: JellyfinClient, onClick: () -> Unit) {
+private fun MixCard(mix: com.oniel.music.data.Mix, client: SpinUsClient, onClick: () -> Unit) {
     val covers = remember(mix.id, mix.tracks) {
         mix.tracks.distinctBy { it.albumId ?: it.artistId ?: it.id }.take(4)
     }
@@ -649,7 +649,7 @@ private fun QuickTile(
 @Composable
 private fun AlbumShelf(
     albums: List<Album>,
-    client: JellyfinClient,
+    client: SpinUsClient,
     onAlbumClick: (String) -> Unit
 ) {
     LazyRow(

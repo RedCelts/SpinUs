@@ -20,7 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.oniel.music.R
-import com.oniel.music.data.JellyfinClient
+import com.oniel.music.data.SpinUsClient
 
 /**
  * Rounded card that sits just above the tab bar while something is playing.
@@ -28,7 +28,7 @@ import com.oniel.music.data.JellyfinClient
  */
 @Composable
 fun MiniPlayer(
-    client: JellyfinClient,
+    client: SpinUsClient,
     player: PlayerController,
     onOpenPlayer: () -> Unit,
     modifier: Modifier = Modifier

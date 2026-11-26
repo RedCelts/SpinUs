@@ -1,6 +1,6 @@
 package com.oniel.music.ui
 
-/** Jellyfin ticks (100 ns) to milliseconds. */
+/** Ticks (100 ns, the unit the models use) to milliseconds. */
 fun ticksToMs(ticks: Long): Long = ticks / 10_000L
 
 /** Milliseconds to ticks. */

@@ -210,7 +210,7 @@ private fun testLyricsClassify() {
     val plain = listOf(
         RawLyricLine("First plain line", null),
         RawLyricLine("Second plain line", null),
-        RawLyricLine("", null) // trailing empty line Jellyfin appends
+        RawLyricLine("", null) // trailing empty line
     )
     checkEq("plain lyrics -> empty list", emptyList<LyricLine>(), Lyrics.classify(plain))
 
@@ -406,25 +406,24 @@ private fun testCrossfade() {
 }
 
 private fun testAuthHeaderValue() {
-    // The exact header the service attaches to ExoPlayer's audio
-    // requests: the universal stream endpoint 401s without it.
-    val client = JellyfinClient()
-    client.restoreSession("http://127.0.0.1:8096", "tok123", "user-1", "Oniel", true)
-    val header = client.authHeaderValue()
-    check("auth header starts with MediaBrowser Token", header.startsWith("MediaBrowser Token=\"tok123\""))
-    check("auth header names the client", header.contains("Client=\"Oniel Music\""))
-    check("auth header carries the version", header.contains("Version=\"1.6.0\""))
-    check("auth header has a device id", header.contains("DeviceId=\""))
-    // The URL keeps api_key too (both together return 200).
-    val url = client.audioUrl("track-9")
-    check("audio url is the universal endpoint", url.contains("/Audio/track-9/universal"))
-    check("audio url keeps api_key", url.contains("api_key=tok123"))
-    // v1.0.3: non-MP3 files must direct-stream (length + seeking).
-    check("audio url allows flac direct", url.contains("Container=mp3,flac,"))
-    check("audio url allows aac in m4a", url.contains("m4a%7Caac"))
-    check("audio url transcodes the rest to mp3", url.contains("TranscodingContainer=mp3"))
-    check("audio url transcodes over plain http", url.contains("TranscodingProtocol=http"))
+    // The header the service attaches to ExoPlayer's audio requests.
+    val client = SpinUsClient()
+    client.restoreSession("192.168.1.10", "tok123", "user-1", "Oniel", true)
+    checkEq("auth header is a bearer token", "Bearer tok123", client.authHeaderValue())
+    checkEq("bare IP gets http and the SpinUs port", "http://192.168.1.10:8484", client.baseUrl)
+    checkEq("audio url streams the file", "http://192.168.1.10:8484/api/stream/track-9?token=tok123",
+        client.audioUrl("track-9"))
+    checkEq("image url carries width, tag and token", "http://192.168.1.10:8484/api/images/alb-1?w=300&tag=t1&token=tok123",
+        client.imageUrl("alb-1", "t1"))
     checkEq("backdrop url is null without a tag", null, client.backdropUrl("art-1", null))
-    check("backdrop url points at Backdrop/0",
-        client.backdropUrl("art-1", "tag9")!!.contains("/Items/art-1/Images/Backdrop/0?"))
+    check("backdrop url asks for a backdrop",
+        client.backdropUrl("art-1", "tag9")!!.contains("/api/images/art-1?type=backdrop&index=0"))
+    // Server address forms.
+    checkEq("explicit port kept", "http://nas:9000", SpinUsClient.normalizeBaseUrl("nas:9000/"))
+    checkEq("https keeps its default port", "https://box.tail1234.ts.net", SpinUsClient.normalizeBaseUrl("https://box.tail1234.ts.net/"))
+    checkEq("http without port gets 8484", "http://100.64.0.5:8484", SpinUsClient.normalizeBaseUrl("http://100.64.0.5"))
+    // Tag dates -> ISO for the New releases shelf.
+    checkEq("year only", "2021-01-01T00:00:00.0000000Z", isoDate("2021"))
+    checkEq("full date", "2021-05-02T00:00:00.0000000Z", isoDate("2021-05-02"))
+    checkEq("junk date", null, isoDate("someday"))
 }
