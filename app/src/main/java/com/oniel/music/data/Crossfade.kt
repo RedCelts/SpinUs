@@ -91,7 +91,16 @@ object Crossfade {
         return minOf(crossfadeMs, maxOf(MIN_FADE_MS, remaining))
     }
 
-    /** Two tracks from the same album play straight through (no crossfade). */
+    /** Setting: crossfade between songs of the same album too (default on). */
+    fun fadeWithinAlbums(ctx: android.content.Context): Boolean =
+        ctx.getSharedPreferences("playback", android.content.Context.MODE_PRIVATE)
+            .getBoolean("fade_within_albums", true)
+
+    fun setFadeWithinAlbums(ctx: android.content.Context, on: Boolean) =
+        ctx.getSharedPreferences("playback", android.content.Context.MODE_PRIVATE)
+            .edit().putBoolean("fade_within_albums", on).apply()
+
+    /** Two tracks from the same album (played straight through unless [fadeWithinAlbums]). */
     fun sameAlbum(albumA: String?, albumB: String?): Boolean =
         !albumA.isNullOrEmpty() && albumA == albumB
 

@@ -643,9 +643,12 @@ class PlaybackService : MediaLibraryService() {
         if (main.repeatMode == Player.REPEAT_MODE_ONE) return
         val nextIndex = main.nextMediaItemIndex
         if (nextIndex == C.INDEX_UNSET) return
-        // Same album: play straight through (gapless), no fade.
+        // Same album: play straight through (gapless), unless the
+        // "Crossfade within albums" setting is on.
         val nextItem = try { main.getMediaItemAt(nextIndex) } catch (e: Exception) { return }
-        if (Crossfade.sameAlbum(albumIdOf(main.currentMediaItem), albumIdOf(nextItem))) return
+        if (!Crossfade.fadeWithinAlbums(this) &&
+            Crossfade.sameAlbum(albumIdOf(main.currentMediaItem), albumIdOf(nextItem))
+        ) return
         val duration = durationOf(main)
         // Never fade longer than half the track (short tracks, intros).
         val crossfadeMs = minOf(crossfadeSeconds * 1000L, duration / 2)

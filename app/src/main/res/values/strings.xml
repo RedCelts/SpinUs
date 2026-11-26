@@ -161,7 +161,9 @@
     <string name="settings_crossfade">Crossfade</string>
     <string name="settings_crossfade_seconds">%1$d seconds</string>
     <string name="settings_crossfade_off">Off — songs play back to back</string>
-    <string name="settings_crossfade_note">The end of each song fades out while the next fades in. The fade starts early when a song is already fading out or ends in silence, and silence at the start of the next song is skipped. Songs from the same album play straight through. 0 turns crossfade off.</string>
+    <string name="settings_crossfade_note">The end of each song fades out while the next fades in. The fade starts early when a song is already fading out or ends in silence, and silence at the start of the next song is skipped. 0 turns crossfade off.</string>
+    <string name="settings_crossfade_albums">Crossfade within albums</string>
+    <string name="settings_crossfade_albums_desc">Off: songs from the same album play straight through with no fade (best for live albums and medleys).</string>
 
     <!-- v1.1.0: item menus, playlists, genres -->
     <string name="more_options">More options</string>

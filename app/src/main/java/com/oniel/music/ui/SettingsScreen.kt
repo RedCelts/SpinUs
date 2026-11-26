@@ -184,6 +184,31 @@ fun SettingsScreen(
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+        Spacer(modifier = Modifier.height(8.dp))
+        run {
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            var withinAlbums by remember { mutableStateOf(Crossfade.fadeWithinAlbums(ctx)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_crossfade_albums),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = stringResource(R.string.settings_crossfade_albums_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = withinAlbums,
+                    onCheckedChange = {
+                        withinAlbums = it
+                        Crossfade.setFadeWithinAlbums(ctx, it)
+                    }
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(24.dp))
 
         TailscaleCard()
