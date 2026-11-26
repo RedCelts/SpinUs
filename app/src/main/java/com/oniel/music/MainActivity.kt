@@ -47,8 +47,21 @@ class MainActivity : ComponentActivity() {
         // Built-in Tailscale (if the user turned it on), and one HTTP
         // client for images too, so artwork also loads over the tailnet.
         Tailscale.startIfEnabled(this)
+        // Artwork is kept on the phone (memory + 512 MB on disk) and reused
+        // regardless of the server's cache headers: image URLs carry a
+        // content tag, so a changed picture gets a new URL anyway.
         Coil.setImageLoader(
-            ImageLoader.Builder(this).okHttpClient(NetClients.http).build()
+            ImageLoader.Builder(this)
+                .okHttpClient(NetClients.http)
+                .memoryCache { coil.memory.MemoryCache.Builder(this).maxSizePercent(0.25).build() }
+                .diskCache {
+                    coil.disk.DiskCache.Builder()
+                        .directory(cacheDir.resolve("artwork"))
+                        .maxSizeBytes(512L * 1024 * 1024)
+                        .build()
+                }
+                .respectCacheHeaders(false)
+                .build()
         )
         try {
             setContent {

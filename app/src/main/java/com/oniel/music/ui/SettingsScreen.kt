@@ -189,6 +189,9 @@ fun SettingsScreen(
         TailscaleCard()
         Spacer(modifier = Modifier.height(24.dp))
 
+        CacheCard(modifier = Modifier.fillMaxWidth())
+        Spacer(modifier = Modifier.height(24.dp))
+
         HistorySyncCard(
             syncedAtMs = historySyncedAtMs,
             error = historySyncError,
@@ -227,7 +230,13 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(32.dp))
         Text(
-            text = stringResource(R.string.settings_version, "1.6.0"),
+            text = stringResource(
+                R.string.settings_version,
+                run {
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { null } ?: ""
+                }
+            ),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )

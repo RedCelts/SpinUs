@@ -207,4 +207,14 @@
     <string name="settings_share_stats">Share my listening stats with friends</string>
     <string name="settings_share_stats_desc">Friends on this server can open your stats from their Friends list while your app is open.</string>
     <string name="mix_song_count">%1$d songs</string>
+    <!-- v2.1.0 cache -->
+    <string name="cache_title">Cache</string>
+    <string name="cache_subtitle">Songs you play and artwork are kept on this phone, so they load instantly and keep playing when the connection drops.</string>
+    <string name="cache_used">Songs: %1$s of %2$s · Artwork: %3$s</string>
+    <string name="cache_size_label">Space for songs</string>
+    <string name="cache_size_restart">The new size applies the next time the app starts.</string>
+    <string name="cache_preload">Pre-load upcoming songs</string>
+    <string name="cache_preload_desc">On Wi-Fi, the next 2 songs in your queue download ahead of time.</string>
+    <string name="cache_clear">Clear cache</string>
+    <string name="cache_clearing">Clearing…</string>
 </resources>

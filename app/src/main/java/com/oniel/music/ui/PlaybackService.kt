@@ -399,6 +399,7 @@ class PlaybackService : MediaLibraryService() {
     /** Attached to whichever player is active. */
     private val activeListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            preloadUpcoming()
             // A new track on the active player: its loudness starts over.
             // (During a fade the active player is the outgoing one, whose
             // meter no longer matters.)
@@ -519,8 +520,13 @@ class PlaybackService : MediaLibraryService() {
         handler.post(checkRunnable)
     }
 
+    /** Network + on-phone song cache, shared by both players and the pre-loader. */
+    private val cacheFactory by lazy {
+        com.oniel.music.net.MediaCache.dataSourceFactory(this, httpFactory ?: OkHttpDataSource.Factory(NetClients.http))
+    }
+
     private fun buildPlayer(): ExoPlayer {
-        val factory = httpFactory ?: OkHttpDataSource.Factory(NetClients.http)
+        val factory = cacheFactory
         val meter = LevelMeter()
         // Same audio sink as ExoPlayer's default, plus the level meter.
         val renderersFactory = object : DefaultRenderersFactory(this) {
@@ -553,7 +559,46 @@ class PlaybackService : MediaLibraryService() {
         controllerInfo: MediaSession.ControllerInfo
     ): MediaLibrarySession? = mediaSession
 
+    // ---- Pre-loading upcoming songs into the cache (Wi-Fi only) ----
+
+    @Volatile private var preloadGeneration = 0
+    @Volatile private var preloadWriter: androidx.media3.datasource.cache.CacheWriter? = null
+    private val preloadExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    /** Fetch the next [MediaCache.PRELOAD_COUNT] songs of the queue in the background. */
+    private fun preloadUpcoming() {
+        val p = player ?: return
+        val generation = ++preloadGeneration
+        preloadWriter?.cancel()
+        if (!com.oniel.music.net.MediaCache.preloadEnabled(this) ||
+            !com.oniel.music.net.MediaCache.onUnmeteredNetwork(this)
+        ) return
+        val timeline = p.currentTimeline
+        if (timeline.isEmpty) return
+        val uris = ArrayList<android.net.Uri>()
+        var index = p.currentMediaItemIndex
+        repeat(com.oniel.music.net.MediaCache.PRELOAD_COUNT) {
+            index = timeline.getNextWindowIndex(index, p.repeatMode.let {
+                if (it == Player.REPEAT_MODE_ONE) Player.REPEAT_MODE_OFF else it
+            }, p.shuffleModeEnabled)
+            if (index == C.INDEX_UNSET) return@repeat
+            p.getMediaItemAt(index).localConfiguration?.uri?.let { uris += it }
+        }
+        if (uris.isEmpty()) return
+        val factory = cacheFactory
+        preloadExecutor.execute {
+            com.oniel.music.net.MediaCache.preload(
+                this, factory, uris,
+                onWriter = { preloadWriter = it },
+                isCancelled = { generation != preloadGeneration }
+            )
+        }
+    }
+
     override fun onDestroy() {
+        preloadGeneration++
+        preloadWriter?.cancel()
+        preloadExecutor.shutdownNow()
         serviceScope.cancel()
         handler.removeCallbacks(checkRunnable)
         handler.removeCallbacks(rampRunnable)
@@ -646,6 +691,7 @@ class PlaybackService : MediaLibraryService() {
         outgoing.clearMediaItems()
         outgoing.volume = 1f
         // The ramp keeps running on the incoming player until fadeTotalMs.
+        preloadUpcoming()
     }
 
     /** Fade finished: everything at full volume, nothing pending. */
