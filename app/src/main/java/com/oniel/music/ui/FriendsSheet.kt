@@ -156,7 +156,7 @@ fun FriendsSheet(
             }
 
             if (requests.incoming.isNotEmpty()) {
-                item { SectionTitle(stringResource(R.string.friend_requests)) }
+                item { FriendsSectionTitle(stringResource(R.string.friend_requests)) }
                 items(requests.incoming, key = { "in-" + it.id }) { f ->
                     PersonRow(f.name) {
                         TextButton(onClick = { friendAction { client.removeFriend(f.id) } }) {
@@ -170,7 +170,7 @@ fun FriendsSheet(
             }
 
             if (recs.isNotEmpty()) {
-                item { SectionTitle(stringResource(R.string.rec_inbox_title)) }
+                item { FriendsSectionTitle(stringResource(R.string.rec_inbox_title)) }
                 items(recs, key = { "rec-" + it.id }) { rec ->
                     RecommendationRow(
                         rec = rec,
@@ -185,7 +185,7 @@ fun FriendsSheet(
             }
 
             item {
-                SectionTitle(stringResource(R.string.friends_listening))
+                FriendsSectionTitle(stringResource(R.string.friends_listening))
                 Text(
                     text = stringResource(R.string.friends_subtitle),
                     style = MaterialTheme.typography.bodySmall,
@@ -221,7 +221,7 @@ fun FriendsSheet(
                 }
             }
 
-            item { SectionTitle(stringResource(R.string.friends_yours, friends.size)) }
+            item { FriendsSectionTitle(stringResource(R.string.friends_yours, friends.size)) }
             if (friends.isEmpty()) {
                 item {
                     Text(
@@ -237,7 +237,7 @@ fun FriendsSheet(
                 }
             }
             if (requests.outgoing.isNotEmpty()) {
-                item { SectionTitle(stringResource(R.string.friend_requested)) }
+                item { FriendsSectionTitle(stringResource(R.string.friend_requested)) }
                 items(requests.outgoing, key = { "out-" + it.id }) { f ->
                     PersonRow(f.name) {
                         TextButton(onClick = { friendAction { client.removeFriend(f.id) } }) {
@@ -308,7 +308,7 @@ fun FriendsSheet(
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+private fun FriendsSectionTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.titleMedium,
