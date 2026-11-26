@@ -119,7 +119,7 @@ class SpinUsClient(
             put("username", username)
             put("password", password)
             put("deviceId", deviceId)
-            put("deviceName", try { android.os.Build.MODEL } catch (e: Throwable) { null } ?: CLIENT_NAME)
+            put("deviceName", (try { android.os.Build.MODEL } catch (e: Throwable) { null }) ?: CLIENT_NAME)
             put("client", CLIENT_NAME)
             put("version", CLIENT_VERSION)
         }
