@@ -1,12 +1,11 @@
 # SpinUs server for CasaOS / Docker.
-#   docker compose up -d --build
+# CasaOS: App Store -> Custom Install -> Import -> paste this file -> Install.
 # Then open http://<server-IP>:8484 and create the admin account
 # (or just sign in from the app: the first sign-in becomes the admin).
 name: spinus
 services:
   spinus:
-    build: .
-    image: spinus-server:latest
+    image: ghcr.io/redcelts/spinus-server:latest
     container_name: spinus
     restart: unless-stopped
     ports:
@@ -18,13 +17,16 @@ services:
       TZ: America/New_York
       SPINUS_RESCAN_MINUTES: "15"
       SPINUS_ARTIST_PHOTOS: "1"
-    x-casaos:
-      architectures: [amd64, arm64]
-      main: spinus
-      title:
-        en_us: SpinUs
-      description:
-        en_us: Music server for the SpinUs Android app
-      category: Media
-      port_map: "8484"
-      index: /
+x-casaos:
+  architectures: [amd64, arm64]
+  main: spinus
+  author: RedCelts
+  category: Media
+  title:
+    en_us: SpinUs
+  tagline:
+    en_us: Music server for the SpinUs app
+  description:
+    en_us: Serves /DATA/Media/Music to the SpinUs Android app.
+  port_map: "8484"
+  index: /

@@ -5,18 +5,17 @@ directly (tags, covers, `.lrc` lyrics) and keeps accounts, favorites,
 playlists, play counts, listening history and Friends presence in one
 SQLite file. Jellyfin isn't needed.
 
-## Run it on the mini PC (CasaOS / Docker)
+## Run it on the mini PC (CasaOS)
 
-```sh
-git clone https://github.com/RedCelts/oniel-music
-cd oniel-music/server
-docker compose up -d --build
-```
+1. CasaOS → **App Store** → **Custom Install** (the + at the top right) → **Import**.
+2. Paste the contents of `docker-compose.yml` → **Submit** → **Install**.
 
-`docker-compose.yml` mounts `/DATA/Media/Music` read-only (where Lidarr
-puts the library) and keeps the database in `/DATA/AppData/spinus`. Edit
-those two lines if your folders differ. In CasaOS you can also use
-**App Store → Custom Install → Import** and paste the compose file.
+It pulls the prebuilt image `ghcr.io/redcelts/spinus-server`, mounts
+`/DATA/Media/Music` read-only and keeps its database in
+`/DATA/AppData/spinus`. Change those two lines if your folders differ.
+
+Plain Docker instead: `docker compose up -d` next to the file.
+To build the image yourself: `docker build -t ghcr.io/redcelts/spinus-server server/`.
 
 Then:
 
