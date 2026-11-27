@@ -75,7 +75,6 @@ fun LibraryScreen(
     val tabs = listOf(
         stringResource(R.string.library_artists),
         stringResource(R.string.library_albums),
-        stringResource(R.string.library_songs),
         stringResource(R.string.library_playlists),
         stringResource(R.string.library_liked)
     )
@@ -203,8 +202,7 @@ fun LibraryScreen(
                     onArtistClick = onArtistClick
                 )
                 1 -> AlbumsSection(albums = albums, client = client, onAlbumClick = onAlbumClick)
-                2 -> SongsSection(tracks = singles, player = player, onTrackPlayed = onTrackPlayed)
-                3 -> PlaylistsSection(playlists = playlists)
+                2 -> PlaylistsSection(playlists = playlists)
                 else -> LikedSection(
                     tracks = liked,
                     player = player,
