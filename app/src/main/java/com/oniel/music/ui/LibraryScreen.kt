@@ -125,10 +125,15 @@ fun LibraryScreen(
             // Refresh from the server only when what we have is old.
             if (LibraryCache.needsRefresh()) {
                 try {
-                    val a = async { client.getAlbums() }
-                    val t = async { client.getTracks() }
-                    albums = a.await()
-                    tracks = t.await()
+                    // Their own scope inside the try: a failed request (server
+                    // unreachable) is caught here instead of closing the app.
+                    val (newAlbums, newTracks) = coroutineScope {
+                        val a = async { client.getAlbums() }
+                        val t = async { client.getTracks() }
+                        a.await() to t.await()
+                    }
+                    albums = newAlbums
+                    tracks = newTracks
                     LibraryCache.store(albums, tracks)
                 } catch (e: Exception) {
                     // Keep what's shown; tabs still render.
